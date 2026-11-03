@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { store } from "./db";
-import type { Issue, Photo, Property, Room, Severity } from "./types";
+import type { InventoryItem, Issue, Photo, Property, Room, Severity } from "./types";
 import { activeIssues, worstSeverity } from "./format";
 
 export function usePropertyData(propertyId: string) {
@@ -8,18 +8,21 @@ export function usePropertyData(propertyId: string) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
   const reload = useCallback(async () => {
-    const [p, r, ph, is] = await Promise.all([
+    const [p, r, ph, is, inv] = await Promise.all([
       store.getProperty(propertyId),
       store.rooms(propertyId),
       store.photos(propertyId),
       store.issues(propertyId),
+      store.inventory(propertyId),
     ]);
     setProperty(p ?? null);
     setRooms(r);
     setPhotos(ph.sort((a, b) => a.createdAt - b.createdAt));
     setIssues(is.sort((a, b) => a.createdAt - b.createdAt));
+    setInventory(inv.sort((a, b) => a.createdAt - b.createdAt));
   }, [propertyId]);
 
   useEffect(() => {
@@ -37,7 +40,7 @@ export function usePropertyData(propertyId: string) {
     return { severityByRoom, issueCountByRoom };
   }, [rooms, issues]);
 
-  return { property, rooms, photos, issues, reload, ...derived };
+  return { property, rooms, photos, issues, inventory, reload, ...derived };
 }
 
 export type PropertyData = ReturnType<typeof usePropertyData>;

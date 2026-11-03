@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   CATEGORY_LABELS,
+  CONDITIONS,
+  INVENTORY_KINDS,
   ISSUE_CATEGORIES,
   SEVERITIES,
   TRADES,
@@ -63,13 +65,47 @@ Rules:
 - confidence is 0 to 1.
 - trade is who should do the work.
 - missingShots lists important views of this room type that the photos do not cover (for example "under kitchen sink", "inside oven"), so the inspector can go back and take them. Use an empty list if coverage is good.
-- roomSummary is 1-2 plain sentences on the overall condition of the room.`;
+- roomSummary is 1-2 plain sentences on the overall condition of the room.
+
+Inventory:
+Also record every appliance, finish, and fixture you can see in the room, whether or not it needs repair. The leasing and maintenance teams use this list to order matching parts, paint, and replacement appliances.
+- appliance: refrigerator, range/oven, cooktop, wall oven, microwave, range hood, dishwasher, garbage disposal, washer, dryer, water heater, furnace/air handler, AC unit, thermostat, etc.
+- finish: flooring, countertops, backsplash, cabinets (material, door style, color), wall paint (color and likely sheen), ceiling, trim and doors, tub/shower surround, tile, window coverings.
+- fixture: faucets, sinks, toilet, tub, vanity, shower head, light fixtures, ceiling fans, cabinet and door hardware, towel bars, outlet/switch covers.
+For each item:
+- item is what it is ("Refrigerator", "Countertop", "Kitchen faucet", "Wall paint").
+- type is the style or material ("French-door, bottom freezer", "Quartz", "Luxury vinyl plank", "Single-handle pull-down").
+- colorFinish is the color and finish ("Stainless steel", "White shaker", "Brushed nickel", "Light gray, eggshell").
+- brand only if a logo or label is readable in the photo; otherwise an empty string. model only if the model number is readable on a label; otherwise an empty string. Never guess a brand or model number.
+- notes: anything else useful for ordering or matching, such as gas or electric, approximate size or width, number of burners, approximate age, or "label photo needed for model number". Empty string if nothing to add.
+- condition is good, fair, poor, replace, or unknown.
+- Record each physical item once, even if it appears in several photos; use the clearest photo for photoId.`;
 
 const FINDINGS_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["findings", "roomSummary", "missingShots"],
+  required: ["findings", "inventory", "roomSummary", "missingShots"],
   properties: {
+    inventory: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["photoId", "kind", "item", "type", "colorFinish", "brand", "model", "notes", "condition", "confidence"],
+        properties: {
+          photoId: { type: "string" },
+          kind: { type: "string", enum: [...INVENTORY_KINDS] },
+          item: { type: "string" },
+          type: { type: "string" },
+          colorFinish: { type: "string" },
+          brand: { type: "string" },
+          model: { type: "string" },
+          notes: { type: "string" },
+          condition: { type: "string", enum: [...CONDITIONS] },
+          confidence: { type: "number" },
+        },
+      },
+    },
     roomSummary: { type: "string" },
     missingShots: { type: "array", items: { type: "string" } },
     findings: {
@@ -153,13 +189,14 @@ app.post("/api/analyze", async (req, res) => {
     text:
       `Room: "${body.roomName}" (type: ${body.roomType}).\n` +
       `Valid categories: ${ISSUE_CATEGORIES.map((c) => `${c} (${CATEGORY_LABELS[c]})`).join(", ")}.\n` +
-      `List everything that must be done to make this room rent-ready.`,
+      `List everything that must be done to make this room rent-ready, and inventory the appliances, finishes, and fixtures.`,
   });
 
   try {
-    const response = await client.beta.messages.create({
+    // Streaming: findings plus inventory for up to 10 photos can be a long answer.
+    const stream = client.beta.messages.stream({
       model: MODEL,
-      max_tokens: 16000,
+      max_tokens: 64000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       thinking: { type: "adaptive" },
@@ -170,6 +207,7 @@ app.post("/api/analyze", async (req, res) => {
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content }],
     });
+    const response = await stream.finalMessage();
 
     if (response.stop_reason === "refusal") {
       res.status(422).json({ error: "The AI declined to analyze these photos. Add issues manually." });
@@ -201,6 +239,11 @@ app.post("/api/analyze", async (req, res) => {
             h: clamp01(Math.min(f.bbox.h, 1 - f.bbox.y)),
           }
         : null,
+    }));
+    parsed.inventory = (parsed.inventory ?? []).map((it) => ({
+      ...it,
+      photoId: validIds.has(it.photoId) ? it.photoId : body.photos[0].photoId,
+      confidence: clamp01(it.confidence),
     }));
     res.json(parsed);
   } catch (err) {

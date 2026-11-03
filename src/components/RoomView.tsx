@@ -8,15 +8,18 @@ import { go } from "../lib/router";
 import { range, totals } from "../lib/format";
 import type { Issue, Photo } from "../lib/types";
 import { IssueCard, IssueEditor, Modal, PhotoWithBoxes, Thumb } from "./common";
+import { InventoryEditor, InventoryList } from "./Inventory";
+import type { InventoryItem } from "../lib/types";
 
 export default function RoomView({ data, roomId, aiEnabled }: { data: PropertyData; roomId: string; aiEnabled: boolean }) {
-  const { rooms, photos, issues, reload, property } = data;
+  const { rooms, photos, issues, inventory, reload, property } = data;
   const room = rooms.find((r) => r.id === roomId);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewPhoto, setViewPhoto] = useState<Photo | null>(null);
   const [editing, setEditing] = useState<Issue | "new" | null>(null);
   const [newPhotoId, setNewPhotoId] = useState<string | undefined>();
+  const [editingInv, setEditingInv] = useState<InventoryItem | "new" | null>(null);
   const [showDims, setShowDims] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pendingShot = useRef<Shot | null>(null);
@@ -26,6 +29,7 @@ export default function RoomView({ data, roomId, aiEnabled }: { data: PropertyDa
   const template = templateFor(room.type);
   const roomPhotos = photos.filter((p) => p.roomId === room.id);
   const roomIssues = issues.filter((i) => i.roomId === room.id);
+  const roomInventory = inventory.filter((i) => i.roomId === room.id);
   const visibleIssues = roomIssues.filter((i) => i.status !== "dismissed");
   const dismissedCount = roomIssues.length - visibleIssues.length;
   const unanalyzed = roomPhotos.filter((p) => !p.analyzedAt).length;
@@ -245,6 +249,31 @@ export default function RoomView({ data, roomId, aiEnabled }: { data: PropertyDa
         )}
         {dismissedCount > 0 && <p className="muted small">{dismissedCount} dismissed item(s) hidden.</p>}
       </section>
+
+      <section>
+        <div className="row">
+          <h2 className="grow">Appliances & finishes</h2>
+          <button className="btn ghost small" onClick={() => setEditingInv("new")}>
+            + Add
+          </button>
+        </div>
+        {roomInventory.length === 0 ? (
+          <p className="muted">{room.analyzedAt ? "Nothing recorded. Re-inspect or add items by hand." : "The AI inspection lists them for you."}</p>
+        ) : (
+          <InventoryList items={roomInventory} photos={roomPhotos} onEdit={setEditingInv} onOpenPhoto={setViewPhoto} />
+        )}
+      </section>
+
+      {editingInv && (
+        <InventoryEditor
+          initial={editingInv === "new" ? undefined : editingInv}
+          propertyId={property!.id}
+          rooms={rooms}
+          defaultRoomId={room.id}
+          onClose={() => setEditingInv(null)}
+          onSaved={reload}
+        />
+      )}
 
       {viewPhoto && (
         <Modal wide onClose={() => setViewPhoto(null)}>

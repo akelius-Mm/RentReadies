@@ -3,11 +3,14 @@ import type { PropertyData } from "../lib/usePropertyData";
 import { CATEGORY_LABELS, TRADES } from "../lib/types";
 import { SEVERITY_RANK, money, range, totals } from "../lib/format";
 import { PhotoWithBoxes, SeverityTag } from "./common";
+import { ConditionTag, inventoryDetails } from "./Inventory";
+import { INVENTORY_KIND_LABELS } from "../lib/types";
 
 export default function ReportTab({ data }: { data: PropertyData }) {
-  const { property, rooms, photos, issues } = data;
+  const { property, rooms, photos, issues, inventory } = data;
   const [includeReview, setIncludeReview] = useState(true);
   const [includePhotos, setIncludePhotos] = useState(true);
+  const [includeInventory, setIncludeInventory] = useState(true);
   if (!property) return null;
 
   const items = issues.filter(
@@ -47,6 +50,9 @@ export default function ReportTab({ data }: { data: PropertyData }) {
         </label>
         <label className="inline">
           <input type="checkbox" checked={includePhotos} onChange={(e) => setIncludePhotos(e.target.checked)} /> Photos
+        </label>
+        <label className="inline">
+          <input type="checkbox" checked={includeInventory} onChange={(e) => setIncludeInventory(e.target.checked)} /> Appliances & finishes
         </label>
         <span className="grow" />
         <button className="btn small" onClick={exportCsv}>
@@ -164,6 +170,42 @@ export default function ReportTab({ data }: { data: PropertyData }) {
           </section>
         );
       })}
+
+      {includeInventory && inventory.length > 0 && (
+        <section className="report-room">
+          <h2>Appliances & finishes</h2>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Item</th>
+                <th>Details</th>
+                <th>Condition</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rooms.flatMap((r) =>
+                inventory
+                  .filter((i) => i.roomId === r.id)
+                  .sort((a, b) => a.kind.localeCompare(b.kind))
+                  .map((i) => (
+                    <tr key={i.id}>
+                      <td>{r.name}</td>
+                      <td>
+                        <b>{i.item}</b>
+                        <div className="small muted">{INVENTORY_KIND_LABELS[i.kind]}</div>
+                      </td>
+                      <td className="small">{inventoryDetails(i)}</td>
+                      <td>
+                        <ConditionTag condition={i.condition} />
+                      </td>
+                    </tr>
+                  )),
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
     </div>
   );
 }

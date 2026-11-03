@@ -46,6 +46,11 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
       { id: "fridge-outside", label: "Refrigerator (outside)", hint: "Dents, handle, door seal." },
       { id: "fridge-inside", label: "Refrigerator (inside & freezer)", hint: "Shelves, drawers, cleanliness, ice maker." },
       { id: "dishwasher", label: "Dishwasher (inside)", hint: "Racks, rust, residue, door seal." },
+      {
+        id: "appliance-labels",
+        label: "Appliance model/serial labels",
+        hint: "Fridge: inside door frame or wall. Range: behind the bottom drawer. Dishwasher: edge of the door. Microwave: inside the door.",
+      },
       windowShot,
       outletShot,
     ]),
@@ -124,6 +129,7 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
       { id: "washer", label: "Washer (inside & hoses)", hint: "Drum, gasket mold, hose condition." },
       { id: "dryer", label: "Dryer & vent", hint: "Lint trap, vent connection." },
       { id: "water-heater", label: "Water heater", hint: "Rust, leaks at the base, pan." },
+      { id: "appliance-labels", label: "Appliance model/serial labels", hint: "Washer: under the lid or back. Dryer: inside the door. Water heater: side sticker." },
     ]),
   },
   {
@@ -146,6 +152,7 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
     shots: [
       { id: "overview-door", label: "Overview", hint: "" },
       { id: "furnace", label: "Furnace / air handler", hint: "Filter, rust, condensate line." },
+      { id: "appliance-labels", label: "Equipment rating plates", hint: "Furnace, AC, and water heater stickers with model and serial." },
       { id: "water-heater", label: "Water heater", hint: "Rust, leaks, drain pan." },
       { id: "panel", label: "Electrical panel", hint: "Cover, labels." },
       { id: "floor", label: "Floor (look for leaks)", hint: "" },

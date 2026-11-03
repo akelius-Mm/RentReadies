@@ -1,6 +1,6 @@
 import { blobToBase64 } from "./image";
 import { store, uid } from "./db";
-import type { AnalyzeRequest, AnalyzeResponse, Issue, Photo, Room } from "./types";
+import type { AnalyzeRequest, AnalyzeResponse, InventoryItem, Issue, Photo, Room } from "./types";
 
 export async function aiStatus(): Promise<{ ai: boolean } | null> {
   try {
@@ -21,6 +21,7 @@ export async function analyzeRoom(room: Room, photos: Photo[], onProgress?: (don
   const summaries: string[] = [];
   const missing = new Set<string>();
   const newIssues: Issue[] = [];
+  const inventory = new Map<string, InventoryItem>();
 
   for (const [n, batch] of batches.entries()) {
     onProgress?.(n, batches.length);
@@ -41,6 +42,13 @@ export async function analyzeRoom(room: Room, photos: Photo[], onProgress?: (don
     const result = json as AnalyzeResponse;
     summaries.push(result.roomSummary);
     result.missingShots.forEach((s) => missing.add(s));
+    for (const it of result.inventory ?? []) {
+      // Batches can see the same item twice; keep one per kind+item+brand+color.
+      const key = [it.kind, it.item, it.brand, it.colorFinish].map((x) => x.trim().toLowerCase()).join("|");
+      const prev = inventory.get(key);
+      if (prev && (prev.model || !it.model) && (prev.confidence ?? 0) >= it.confidence) continue;
+      inventory.set(key, { ...it, id: prev?.id ?? uid(), propertyId: room.propertyId, roomId: room.id, source: "ai", createdAt: Date.now() });
+    }
     for (const f of result.findings) {
       newIssues.push({
         id: uid(),
@@ -68,9 +76,10 @@ export async function analyzeRoom(room: Room, photos: Photo[], onProgress?: (don
   // Replace earlier AI findings the user hasn't acted on; keep approved/manual ones.
   await store.clearUntouchedAiIssues(room.id);
   await store.putIssues(newIssues);
+  await store.replaceAiInventory(room.id, [...inventory.values()]);
   const now = Date.now();
   for (const p of photos) await store.putPhoto({ ...p, analyzedAt: now });
   const missingShots = [...missing];
   await store.putRoom({ ...room, analyzedAt: now, aiSummary: summaries.join(" "), aiMissingShots: missingShots });
-  return { count: newIssues.length, summary: summaries.join(" "), missingShots };
+  return { count: newIssues.length, inventoryCount: inventory.size, summary: summaries.join(" "), missingShots };
 }

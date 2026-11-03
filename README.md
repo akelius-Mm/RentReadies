@@ -18,9 +18,14 @@ a printable report.
    the oven, toilet base, exhaust fan, air vents). On a phone, each item opens the camera.
 4. **Inspect with AI**: sends the room's photos to Claude, which returns each problem with category, severity,
    recommended fix, trade, cost range, and a box on the photo. It also lists shots you missed.
-5. **Repairs**: approve, dismiss, schedule, or mark items done; add items by hand; group by room, trade,
+5. **Appliances & finishes**: the same AI pass lists every appliance (type, brand and model when the label is
+   readable, color/finish, gas or electric, condition), finish (flooring, countertops, cabinets, paint color and
+   sheen, backsplash, tile), and fixture (faucets, lights, hardware finish). The kitchen, laundry, and utility
+   checklists include a "model/serial labels" shot so model numbers can be read. Edit or add items by hand; export
+   to CSV.
+6. **Repairs**: approve, dismiss, schedule, or mark items done; add items by hand; group by room, trade,
    category, or severity.
-6. **Report**: totals by trade, items per room with marked-up photos. Print / save as PDF, or export CSV.
+7. **Report**: totals by trade, items per room with marked-up photos, and the appliance/finish list. Print / save as PDF, or export CSV.
 
 Photos and inspections are stored in the browser (IndexedDB) on the device that took them. Photos are resized
 to 1568 px before storage and upload.

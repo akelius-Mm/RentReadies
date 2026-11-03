@@ -149,6 +149,44 @@ export type RoomType =
   | "utility"
   | "other";
 
+// ---- Inventory: appliances, finishes, fixtures ------------------------------
+
+export const INVENTORY_KINDS = ["appliance", "finish", "fixture"] as const;
+export type InventoryKind = (typeof INVENTORY_KINDS)[number];
+export const INVENTORY_KIND_LABELS: Record<InventoryKind, string> = {
+  appliance: "Appliances",
+  finish: "Finishes",
+  fixture: "Fixtures & hardware",
+};
+
+export const CONDITIONS = ["good", "fair", "poor", "replace", "unknown"] as const;
+export type Condition = (typeof CONDITIONS)[number];
+
+export interface InventoryFields {
+  kind: InventoryKind;
+  /** What it is: "Refrigerator", "Countertop", "Kitchen faucet", "Wall paint". */
+  item: string;
+  /** Type / material: "French-door, bottom freezer", "Quartz", "Luxury vinyl plank". */
+  type: string;
+  /** Color and finish: "Stainless steel", "White shaker", "Brushed nickel", "Light gray, eggshell". */
+  colorFinish: string;
+  brand: string;
+  model: string;
+  /** Gas / electric, size, approx. age, or anything else useful for ordering or matching. */
+  notes: string;
+  condition: Condition;
+}
+
+export interface InventoryItem extends InventoryFields {
+  id: string;
+  propertyId: string;
+  roomId: string;
+  photoId?: string;
+  confidence?: number;
+  source: "ai" | "manual";
+  createdAt: number;
+}
+
 // ---- API contract -------------------------------------------------------
 
 export interface AnalyzeRequest {
@@ -171,8 +209,14 @@ export interface AnalyzedFinding {
   bbox: BBox | null;
 }
 
+export interface AnalyzedInventoryItem extends InventoryFields {
+  photoId: string;
+  confidence: number;
+}
+
 export interface AnalyzeResponse {
   findings: AnalyzedFinding[];
+  inventory: AnalyzedInventoryItem[];
   roomSummary: string;
   missingShots: string[];
 }

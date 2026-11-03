@@ -5,6 +5,7 @@ import RoomsTab from "./RoomsTab";
 import RoomView from "./RoomView";
 import RepairsTab from "./RepairsTab";
 import ReportTab from "./ReportTab";
+import InventoryTab from "./InventoryTab";
 
 // three.js is large; only load it when the map is opened.
 const MapTab = lazy(() => import("./MapTab"));
@@ -13,6 +14,7 @@ const TABS = [
   { id: "map", label: "3D map" },
   { id: "rooms", label: "Rooms & photos" },
   { id: "repairs", label: "Repairs" },
+  { id: "inventory", label: "Appliances & finishes" },
   { id: "report", label: "Report" },
 ];
 
@@ -66,6 +68,8 @@ export default function PropertyView({
         <RoomsTab data={data} />
       ) : activeTab === "repairs" ? (
         <RepairsTab data={data} />
+      ) : activeTab === "inventory" ? (
+        <InventoryTab data={data} />
       ) : activeTab === "report" ? (
         <ReportTab data={data} />
       ) : (
