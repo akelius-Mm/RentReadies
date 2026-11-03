@@ -2,12 +2,41 @@ import { blobToBase64 } from "./image";
 import { store, uid } from "./db";
 import type { AnalyzeRequest, AnalyzeResponse, InventoryItem, Issue, Photo, Room } from "./types";
 
-export async function aiStatus(): Promise<{ ai: boolean } | null> {
+const PASSCODE_KEY = "rr-passcode";
+export function getPasscode() {
   try {
-    const r = await fetch("/api/health");
+    return localStorage.getItem(PASSCODE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+export function setPasscode(v: string) {
+  try {
+    localStorage.setItem(PASSCODE_KEY, v);
+  } catch {
+    /* private mode: passcode lasts for this page only */
+  }
+  memoryPasscode = v;
+}
+let memoryPasscode = "";
+const authHeaders = (): Record<string, string> => {
+  const p = getPasscode() || memoryPasscode;
+  return p ? { "x-app-passcode": p } : {};
+};
+
+export interface AiStatus {
+  ai: boolean;
+  aiError: string | null;
+  passcodeRequired: boolean;
+  passcodeOk: boolean;
+}
+
+export async function aiStatus(): Promise<AiStatus | null> {
+  try {
+    const r = await fetch("/api/health", { headers: authHeaders(), cache: "no-store" });
     return r.ok ? r.json() : null;
   } catch {
-    return null;
+    return null; // offline or server down
   }
 }
 
@@ -32,9 +61,10 @@ export async function analyzeRoom(room: Room, photos: Photo[], onProgress?: (don
         batch.map(async (p) => ({ photoId: p.id, label: p.label, mediaType: "image/jpeg" as const, data: await blobToBase64(p.blob) })),
       ),
     };
+    if (!navigator.onLine) throw new Error("You're offline. Photos are saved; run the inspection when you have signal.");
     const res = await fetch("/api/analyze", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
     const json = await res.json().catch(() => ({ error: `Server error ${res.status}` }));

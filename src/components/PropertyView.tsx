@@ -11,11 +11,11 @@ import InventoryTab from "./InventoryTab";
 const MapTab = lazy(() => import("./MapTab"));
 
 const TABS = [
-  { id: "map", label: "3D map" },
-  { id: "rooms", label: "Rooms & photos" },
-  { id: "repairs", label: "Repairs" },
-  { id: "inventory", label: "Appliances & finishes" },
-  { id: "report", label: "Report" },
+  { id: "map", label: "3D map", short: "Map", icon: "🧊" },
+  { id: "rooms", label: "Rooms & photos", short: "Rooms", icon: "📷" },
+  { id: "repairs", label: "Repairs", short: "Repairs", icon: "🛠️" },
+  { id: "inventory", label: "Appliances & finishes", short: "Items", icon: "🧾" },
+  { id: "report", label: "Report", short: "Report", icon: "📄" },
 ];
 
 export default function PropertyView({
@@ -58,7 +58,11 @@ export default function PropertyView({
       <nav className="tabs no-print">
         {TABS.map((x) => (
           <a key={x.id} href={`#/p/${propertyId}/${x.id}`} className={activeTab === x.id ? "active" : ""}>
-            {x.label}
+            <span className="tab-icon" aria-hidden>
+              {x.icon}
+            </span>
+            <span className="tab-long">{x.label}</span>
+            <span className="tab-short">{x.short}</span>
           </a>
         ))}
       </nav>

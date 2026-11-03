@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { timingSafeEqual, createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   CATEGORY_LABELS,
@@ -28,14 +29,57 @@ if (fs.existsSync(envFile)) {
   }
 }
 
-const hasCredentials = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+// The SDK resolves credentials in this order: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, then the
+// `ant auth login` OAuth profile on disk (refreshed automatically). Nothing to configure here.
 const client = new Anthropic();
+
+const authSource = process.env.ANTHROPIC_API_KEY
+  ? "API key"
+  : process.env.ANTHROPIC_AUTH_TOKEN
+    ? "OAuth token (ANTHROPIC_AUTH_TOKEN)"
+    : `Claude login profile${process.env.ANTHROPIC_PROFILE ? ` "${process.env.ANTHROPIC_PROFILE}"` : ""} (ant auth login)`;
+
+// Check the credentials with a free call, and re-check at most once a minute while they fail.
+let ai: { ready: boolean; error?: string; checkedAt: number } = { ready: false, checkedAt: 0 };
+async function checkAi(force = false) {
+  if (!force && (ai.ready || Date.now() - ai.checkedAt < 60_000)) return ai;
+  try {
+    await client.models.retrieve(MODEL);
+    ai = { ready: true, checkedAt: Date.now() };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    ai = {
+      ready: false,
+      checkedAt: Date.now(),
+      error:
+        err instanceof Anthropic.AuthenticationError || /credential|api key|auth/i.test(msg)
+          ? "No working Claude login on the server. Run `ant auth login` on the server machine (or set ANTHROPIC_API_KEY). The server re-checks every minute."
+          : `Could not reach Claude: ${msg}`,
+    };
+  }
+  return ai;
+}
+
+// Optional shared passcode. Set APP_PASSCODE when the server is reachable from the internet,
+// so only your team can spend your Claude usage.
+const PASSCODE = process.env.APP_PASSCODE?.trim() || "";
+const digest = (v: string) => createHash("sha256").update(v).digest();
+const passcodeOk = (given: unknown) =>
+  !PASSCODE || (typeof given === "string" && timingSafeEqual(digest(given), digest(PASSCODE)));
 
 const app = express();
 app.use(express.json({ limit: "60mb" }));
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, ai: hasCredentials, model: MODEL });
+app.get("/api/health", async (req, res) => {
+  const status = await checkAi();
+  res.json({
+    ok: true,
+    ai: status.ready,
+    aiError: status.error ?? null,
+    model: MODEL,
+    passcodeRequired: Boolean(PASSCODE),
+    passcodeOk: passcodeOk(req.get("x-app-passcode")),
+  });
 });
 
 const SYSTEM_PROMPT = `You are a make-ready inspector for a residential rental company. A unit has just been vacated. You review photos of one room and list every item that must be fixed, replaced, or cleaned before the unit can be rented to the next tenant.
@@ -162,10 +206,13 @@ const FINDINGS_SCHEMA = {
 const clamp01 = (n: number) => Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0));
 
 app.post("/api/analyze", async (req, res) => {
-  if (!hasCredentials) {
-    res.status(503).json({
-      error: "AI inspection is not configured. Set ANTHROPIC_API_KEY in the server's .env file and restart.",
-    });
+  if (!passcodeOk(req.get("x-app-passcode"))) {
+    res.status(401).json({ error: "Wrong or missing passcode.", passcode: true });
+    return;
+  }
+  const status = await checkAi();
+  if (!status.ready) {
+    res.status(503).json({ error: status.error ?? "AI inspection is not available." });
     return;
   }
 
@@ -250,7 +297,8 @@ app.post("/api/analyze", async (req, res) => {
     if (err instanceof Anthropic.RateLimitError) {
       res.status(429).json({ error: "AI service is busy. Wait a minute and try again." });
     } else if (err instanceof Anthropic.AuthenticationError) {
-      res.status(401).json({ error: "The server's ANTHROPIC_API_KEY was rejected." });
+      ai = { ready: false, checkedAt: Date.now(), error: "The server's Claude login expired or was rejected. Run `ant auth login` again." };
+      res.status(503).json({ error: ai.error });
     } else if (err instanceof Anthropic.BadRequestError) {
       res.status(400).json({ error: `AI request rejected: ${err.message}` });
     } else if (err instanceof Anthropic.APIError) {
@@ -271,6 +319,10 @@ if (fs.existsSync(dist)) {
   app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
 }
 
-app.listen(PORT, () => {
-  console.log(`RentReadies API on http://localhost:${PORT} (AI ${hasCredentials ? "enabled" : "disabled — set ANTHROPIC_API_KEY"})`);
+app.listen(PORT, async () => {
+  console.log(`RentReadies on http://localhost:${PORT}`);
+  console.log(`Claude credentials: ${authSource}`);
+  const status = await checkAi(true);
+  console.log(status.ready ? `AI inspection ready (${MODEL}).` : `AI inspection OFF: ${status.error}`);
+  if (!PASSCODE) console.log("No APP_PASSCODE set. Set one before exposing this server to the internet.");
 });

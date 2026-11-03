@@ -197,3 +197,45 @@ button.link { background: none; border: 0; padding: 0; color: #1b5fc1; font: inh
 .inv-main { font: inherit; color: inherit; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; }
 .thumb.empty { display: block; background: var(--bg); cursor: default; }
 .inv-list .thumb { width: 56px; height: 56px; }
+
+/* app banners */
+.banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: #e8eefc; border-bottom: 1px solid var(--line); }
+.banner.warn { background: #fff4d6; }
+.banner input { padding: 6px 8px; width: 140px; }
+
+/* tabs: icons only on phones, labels on desktop */
+.tab-icon, .tab-short { display: none; }
+
+@media (max-width: 720px) {
+  .property { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .tabs {
+    position: fixed; top: auto; bottom: 0; left: 0; right: 0; z-index: 20;
+    justify-content: space-around; gap: 0; padding: 0 0 env(safe-area-inset-bottom);
+    background: #fff; border-top: 1px solid var(--line); border-bottom: 0;
+    box-shadow: 0 -4px 16px rgba(20, 33, 61, 0.06);
+  }
+  .tabs a {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 7px 2px 6px; font-size: 0.7rem; border-bottom: 0; border-top: 3px solid transparent;
+  }
+  .tabs a.active { border-top-color: var(--accent); border-bottom: 0; }
+  .tab-icon { display: block; font-size: 1.25rem; line-height: 1; }
+  .tab-long { display: none; }
+  .tab-short { display: block; }
+  .sticky-actions { bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .topbar { position: sticky; top: 0; z-index: 10; }
+  .map-body { min-height: 0; }
+  /* Bigger tap targets for gloved/quick use on site. */
+  .btn { min-height: 42px; }
+  .btn.small { min-height: 36px; }
+  .shot-btn { padding: 10px 4px; }
+  .page { padding: 12px; }
+  .property-head { padding: 12px 12px 4px; }
+  .property-head h1 { font-size: 1.2rem; }
+}
+@media (max-width: 720px) {
+  .sticky-actions { padding: 10px 12px; }
+  .sticky-actions .row { flex-wrap: nowrap; }
+  .sticky-actions .btn.primary { flex: 1; justify-content: center; }
+  .sticky-actions p { margin: 6px 0 0; }
+}

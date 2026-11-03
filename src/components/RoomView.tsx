@@ -190,10 +190,14 @@ export default function RoomView({ data, roomId, aiEnabled }: { data: PropertyDa
             {room.analyzedAt ? (unanalyzed ? `Re-inspect (${unanalyzed} new photos)` : "Re-inspect with AI") : "Inspect with AI"}
           </button>
           <button className="btn" onClick={() => setEditing("new")}>
-            + Add item manually
+            + Add item
           </button>
         </div>
-        {!aiEnabled && <p className="small warn-text">AI is off on this server. You can still add items manually.</p>}
+        {!aiEnabled && (
+          <p className="small warn-text" title="Offline, passcode needed, or the server isn't signed in to Claude.">
+            AI unavailable right now. Photos are saved; inspect later.
+          </p>
+        )}
         {busy && (
           <p className="small">
             <span className="spinner" /> {busy}

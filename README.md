@@ -30,32 +30,66 @@ a printable report.
 Photos and inspections are stored in the browser (IndexedDB) on the device that took them. Photos are resized
 to 1568 px before storage and upload.
 
-## Run it
+## Use it on your phone with your Claude login
 
-Requires Node 20+.
+The app runs on your phone; a small server on your computer does the AI inspection using your Claude login.
+Photos and inspections are saved on the phone, so you can walk a unit with no signal and run the AI later.
+
+**1. Sign in to Claude on your computer** (one time). Install the `ant` CLI
+(macOS: `brew install anthropics/tap/ant`; other systems: see
+[releases](https://github.com/anthropics/anthropic-cli/releases)), then:
+
+```bash
+ant auth login        # opens the browser; pick your org/workspace
+ant auth status       # should show your profile as the active credential
+```
+
+Make sure `ANTHROPIC_API_KEY` is **not** set in your shell. If it is, it overrides your login.
+
+**2. Start the server** (Node 20+):
 
 ```bash
 npm install
-cp .env.example .env   # add ANTHROPIC_API_KEY
-npm run dev            # web on http://localhost:5173, API on :8787
+cp .env.example .env   # set APP_PASSCODE to something only your team knows
+npm run build
+npm start
 ```
 
-Production:
+The log should say `Claude credentials: Claude login profile` and `AI inspection ready`.
+
+**3. Give your phone an HTTPS address.** Phones only install web apps from HTTPS
+addresses. Use an address that stays the same: the app's saved data belongs to that address.
+
+- **Recommended: [Tailscale](https://tailscale.com)** (private, free for personal use). Install it on the computer
+  and the phone, sign in to both, then on the computer run `tailscale serve --bg 8787`. Open the
+  `https://<computer>.<tailnet>.ts.net` address it prints on your phone. Only your devices can reach it.
+- **Quick trial: Cloudflare quick tunnel.** `cloudflared tunnel --url http://localhost:8787` prints a public
+  `https://….trycloudflare.com` address. It changes every time, so don't install the app from it, and keep
+  `APP_PASSCODE` set.
+
+**4. Install it.** iPhone: open the address in Safari → Share → **Add to Home Screen**. Android: open it in
+Chrome → ⋮ → **Install app**. Enter the passcode once when asked.
+
+Keep the computer on and the server running when you want to run AI inspections. If the login expires, the app
+shows "No working Claude login"; run `ant auth login` again on the computer.
+
+Your Claude login is meant for your own use. To run this for a whole team on a shared server, use an API key
+(`ANTHROPIC_API_KEY`) or workload identity federation instead.
+
+## Develop
 
 ```bash
-npm run build
-npm start              # serves app + API on http://localhost:8787
+npm run dev            # web on http://localhost:5173 (hot reload), API on :8787
 ```
 
-Without `ANTHROPIC_API_KEY` the app still works; AI inspection is disabled and you add items by hand.
-
-To use the camera from a phone, open the app over HTTPS (for example behind your normal reverse proxy) or on the
-same network via `npm run dev` (Vite listens on all interfaces).
+Without any Claude credential the app still works; AI inspection is off and you add items by hand.
 
 ## Code layout
 
 - `server/index.ts` – Express server; `POST /api/analyze` calls Claude (`claude-opus-5-5`) with the room photos and
-  a JSON schema for the findings.
+  a JSON schema for the findings and inventory. Uses whichever Claude credential the SDK finds (API key, OAuth
+  token, or `ant auth login` profile) and checks `APP_PASSCODE`.
+- `public/sw.js` – service worker so the installed app opens offline.
 - `src/lib/roomTemplates.ts` – room types and their photo checklists. Edit this to change what inspectors shoot.
 - `src/components/Scene3D.tsx` – three.js viewer for the floor plan and imported scans.
 - `src/components/RoomView.tsx` – photo capture and AI inspection for one room.
