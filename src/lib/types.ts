@@ -1,0 +1,178 @@
+// Shared data model for the client and the API server.
+
+export const ISSUE_CATEGORIES = [
+  "water_damage",
+  "mold",
+  "paint",
+  "wall_damage",
+  "stain",
+  "flooring",
+  "appliance",
+  "hvac_vent",
+  "cleaning",
+  "plumbing",
+  "electrical",
+  "fixture",
+  "cabinet_counter",
+  "door_window",
+  "pest",
+  "safety",
+  "other",
+] as const;
+export type IssueCategory = (typeof ISSUE_CATEGORIES)[number];
+
+export const CATEGORY_LABELS: Record<IssueCategory, string> = {
+  water_damage: "Water damage",
+  mold: "Mold / mildew",
+  paint: "Paint / touch-up",
+  wall_damage: "Wall / ceiling damage",
+  stain: "Stain",
+  flooring: "Flooring",
+  appliance: "Appliance",
+  hvac_vent: "HVAC / air vent",
+  cleaning: "Cleaning",
+  plumbing: "Plumbing",
+  electrical: "Electrical",
+  fixture: "Fixture / hardware",
+  cabinet_counter: "Cabinets / counters",
+  door_window: "Doors / windows / blinds",
+  pest: "Pest evidence",
+  safety: "Safety (smoke/CO detector, trip hazard)",
+  other: "Other",
+};
+
+export const SEVERITIES = ["low", "medium", "high", "urgent"] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
+export const TRADES = [
+  "Cleaner",
+  "Painter",
+  "Handyman",
+  "Plumber",
+  "Electrician",
+  "HVAC",
+  "Flooring",
+  "Appliance tech",
+  "Water/mold remediation",
+  "Pest control",
+  "Other",
+] as const;
+export type Trade = (typeof TRADES)[number];
+
+export type IssueStatus = "open" | "approved" | "scheduled" | "done" | "dismissed";
+
+/** Normalized 0..1 box on the photo; approximate. */
+export interface BBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface Issue {
+  id: string;
+  propertyId: string;
+  roomId: string;
+  photoId?: string;
+  category: IssueCategory;
+  severity: Severity;
+  title: string;
+  description: string;
+  recommendedAction: string;
+  trade: Trade;
+  estCostLow: number;
+  estCostHigh: number;
+  confidence?: number;
+  bbox?: BBox | null;
+  source: "ai" | "manual";
+  status: IssueStatus;
+  createdAt: number;
+}
+
+export interface Photo {
+  id: string;
+  propertyId: string;
+  roomId: string;
+  shotId: string; // key from the room's shot list, or "extra"
+  label: string;
+  blob: Blob; // resized JPEG
+  width: number;
+  height: number;
+  createdAt: number;
+  analyzedAt?: number;
+}
+
+export interface Room {
+  id: string;
+  propertyId: string;
+  type: RoomType;
+  name: string;
+  // Footprint for the generated 3D floor plan (feet).
+  widthFt: number;
+  lengthFt: number;
+  ceilingFt: number;
+  // Position on the plan (feet, top-left corner).
+  x: number;
+  y: number;
+  // Optional marker placed on an imported 3D scan.
+  scanMarker?: [number, number, number] | null;
+  notes?: string;
+  analyzedAt?: number;
+  aiSummary?: string;
+  aiMissingShots?: string[];
+  createdAt: number;
+}
+
+export interface Property {
+  id: string;
+  name: string; // e.g. "123 Main St #4B"
+  address?: string;
+  createdAt: number;
+  updatedAt: number;
+  scan?: { fileName: string; blob: Blob; format: ScanFormat } | null;
+}
+
+export type ScanFormat = "glb" | "gltf" | "obj" | "ply" | "usdz";
+
+export type RoomType =
+  | "kitchen"
+  | "bathroom"
+  | "bedroom"
+  | "living"
+  | "dining"
+  | "hallway"
+  | "laundry"
+  | "closet"
+  | "entry"
+  | "garage"
+  | "exterior"
+  | "utility"
+  | "other";
+
+// ---- API contract -------------------------------------------------------
+
+export interface AnalyzeRequest {
+  roomType: RoomType;
+  roomName: string;
+  photos: { photoId: string; label: string; mediaType: "image/jpeg"; data: string }[];
+}
+
+export interface AnalyzedFinding {
+  photoId: string;
+  category: IssueCategory;
+  severity: Severity;
+  title: string;
+  description: string;
+  recommendedAction: string;
+  trade: Trade;
+  estCostLow: number;
+  estCostHigh: number;
+  confidence: number;
+  bbox: BBox | null;
+}
+
+export interface AnalyzeResponse {
+  findings: AnalyzedFinding[];
+  roomSummary: string;
+  missingShots: string[];
+}
