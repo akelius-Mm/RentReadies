@@ -38,15 +38,30 @@ a printable report.
 Photos and inspections are stored in the browser (IndexedDB) on the device that took them. Photos are resized
 to 1568 px before storage and upload.
 
+## Team record, follow-up, and Ask
+
+Every inspection is saved to one shared database on the server (SQLite in `DATA_DIR`, photos and scan files next
+to it). Phones keep a local copy so inspections work with no signal; changes sync every 30 seconds, on
+reconnect, and a couple of seconds after each edit.
+
+- **Home**: an **Ask** box (plain-English questions such as "How many full turns did we do last month?" or
+  "Which units still have open water damage?", answered by Claude from the records with read-only SQL), team
+  numbers (open / overdue / unassigned repairs, turns by type and month, units not rent-ready, most common repairs,
+  who owns what), and every inspection by anyone on the team.
+- **Inspections** carry a turn type (Light turn, Full turn, Renovation, Move-in, Move-out, Other), the inspector's
+  name, and a complete/in-progress status.
+- **Follow-up**: every open repair across all units with owner, due date and status; filters for overdue, no owner,
+  mine, and done (with who closed it and when).
+
 ## Put it online (no computer needed)
 
-1. Create a free account at [render.com](https://render.com) and connect your GitHub.
-2. **New → Blueprint**, pick this repository. Render reads `render.yaml`.
+1. Create an account at [render.com](https://render.com) and connect your GitHub.
+2. **New → Blueprint**, pick this repository. Render reads `render.yaml`: a Starter instance with a 5 GB disk
+   (about $8–9/month). The disk is what keeps the shared record; the free plan has none and would lose it.
 3. Fill in `ANTHROPIC_API_KEY` (from [console.anthropic.com](https://console.anthropic.com) → API keys) and an
-   `APP_PASSCODE`, then **Apply**. After a few minutes you get an address like `https://rentreadies.onrender.com`.
-4. On the iPhone, open that address in **Safari** → Share → **Add to Home Screen**. Enter the passcode once.
-
-The free plan sleeps when idle; the first open after a while takes about a minute.
+   `APP_PASSCODE`, then **Apply**. You get an address like `https://rentreadies.onrender.com`.
+4. On each phone, open that address in **Safari** → Share → **Add to Home Screen**. Enter the passcode and your
+   name once.
 
 ## Use it on your phone with your Claude login
 

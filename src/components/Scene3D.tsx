@@ -15,7 +15,7 @@ export interface Scene3DProps {
   rooms: Room[];
   severityByRoom: Record<string, Severity | null>;
   issueCountByRoom: Record<string, number>;
-  scan?: { fileName: string; blob: Blob; format: ScanFormat } | null;
+  scan?: { fileName: string; blob?: Blob; blobId?: string; format: ScanFormat } | null;
   placingRoomId?: string | null;
   onSelectRoom?: (roomId: string) => void;
   onMoveRoom?: (roomId: string, x: number, y: number) => void;
@@ -250,7 +250,7 @@ export default function Scene3D(props: Scene3DProps) {
 
   // --- imported scan ------------------------------------------------------
   // IndexedDB hands back a new Blob on every reload, so key on file identity.
-  const scanKey = props.scan ? `${props.scan.fileName}|${props.scan.blob.size}|${props.scan.format}` : "";
+  const scanKey = props.scan?.blob ? `${props.scan.blobId ?? props.scan.fileName}|${props.scan.blob.size}|${props.scan.format}` : "";
   useEffect(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
@@ -258,12 +258,13 @@ export default function Scene3D(props: Scene3DProps) {
     ctx.scanMeshes = [];
     ctx.roomplan = null;
     const scan = propsRef.current.scan;
-    if (!scan) return;
+    if (!scan?.blob) return; // not downloaded to this phone yet
+    const blob = scan.blob;
     let cancelled = false;
-    const url = URL.createObjectURL(scan.blob);
+    const url = URL.createObjectURL(blob);
     const load =
       scan.format === "roomplan"
-        ? scan.blob.text().then((t) => {
+        ? blob.text().then((t) => {
             const parsed = JSON.parse(t);
             if (!isRRScan(parsed)) throw new Error("Not a RentReadies LiDAR scan");
             ctx.roomplan = parsed;

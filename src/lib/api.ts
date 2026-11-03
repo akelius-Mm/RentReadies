@@ -1,4 +1,5 @@
 import { blobToBase64 } from "./image";
+import { photoBlob } from "./sync";
 import { store, uid } from "./db";
 import { matchesScanCategory } from "./scanImport";
 import type { AnalyzeRequest, AnalyzeResponse, InventoryItem, Issue, Photo, Room } from "./types";
@@ -59,7 +60,7 @@ export async function analyzeRoom(room: Room, photos: Photo[], onProgress?: (don
       roomType: room.type,
       roomName: room.name,
       photos: await Promise.all(
-        batch.map(async (p) => ({ photoId: p.id, label: p.label, mediaType: "image/jpeg" as const, data: await blobToBase64(p.blob) })),
+        batch.map(async (p) => ({ photoId: p.id, label: p.label, mediaType: "image/jpeg" as const, data: await blobToBase64(await photoBlob(p)) })),
       ),
     };
     if (!navigator.onLine) throw new Error("You're offline. Photos are saved; run the inspection when you have signal.");
@@ -166,4 +167,41 @@ export function scanAppLink(slotId: string, unitName: string, rooms: { name: str
     rooms: JSON.stringify(rooms),
   });
   return `rentreadies-scan://scan?${q}`;
+}
+
+// ---- Shared record: dashboard and questions ---------------------------------------
+
+export interface Stats {
+  today: string;
+  totals: {
+    inspections: number;
+    completed: number;
+    open_items: number;
+    overdue_items: number;
+    unassigned_items: number;
+    open_cost_low: number;
+    open_cost_high: number;
+  };
+  byTurnType: { turn_type: string; inspections: number; avg_cost_low: number | null; avg_cost_high: number | null }[];
+  byMonth: { month: string; turn_type: string; inspections: number }[];
+  topCategories: { category: string; items: number; cost_high: number }[];
+  notReady: { id: string; unit: string; turn_type: string; inspector: string | null; inspected_on: string; open_items: number; overdue: number }[];
+  byAssignee: { assignee: string; open_items: number; overdue: number }[];
+}
+
+export async function getStats(): Promise<Stats> {
+  const res = await fetch("/api/stats", { headers: authHeaders(), cache: "no-store" });
+  if (!res.ok) throw new Error(`Couldn't load the dashboard (server ${res.status}).`);
+  return res.json();
+}
+
+export async function askQuestion(question: string): Promise<{ answer: string; queries: string[] }> {
+  const res = await fetch("/api/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ question }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}`);
+  return json;
 }

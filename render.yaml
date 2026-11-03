@@ -1,18 +1,25 @@
-# One-click hosting on Render (https://render.com): New → Blueprint → pick this repo.
-# The free plan sleeps after ~15 min idle; the first request after that takes ~1 minute to wake up.
-# Your inspections are stored on your phone, so nothing is lost while it sleeps.
+# Hosting on Render (https://render.com): New → Blueprint → pick this repo.
+# The shared inspection record (database + photos) lives on a persistent disk, which needs a paid
+# instance: Starter (~$7/month) + 5 GB disk (~$1.25/month). The free plan has no disk and would
+# lose all records whenever it restarts.
 services:
   - type: web
     name: rentreadies
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 5
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: DATA_DIR
+        value: /var/data
       - key: ANTHROPIC_API_KEY # from console.anthropic.com → API keys
         sync: false
-      - key: APP_PASSCODE # anyone using the app enters this once
+      - key: APP_PASSCODE # everyone on the team enters this once
         sync: false

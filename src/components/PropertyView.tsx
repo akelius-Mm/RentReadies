@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import { usePropertyData } from "../lib/usePropertyData";
 import { range, totals } from "../lib/format";
+import { store } from "../lib/db";
+import { TURN_TYPES, type TurnType } from "../lib/types";
 import RoomsTab from "./RoomsTab";
 import RoomView from "./RoomView";
 import RepairsTab from "./RepairsTab";
@@ -36,8 +38,8 @@ export default function PropertyView({
   if (property === null)
     return (
       <div className="page">
-        <p>This unit was not found on this device.</p>
-        <a href="#/">Back to units</a>
+        <p>This inspection wasn't found. It may have been deleted, or it hasn't synced to this phone yet.</p>
+        <a href="#/">Back to home</a>
       </div>
     );
 
@@ -51,8 +53,38 @@ export default function PropertyView({
         <div className="grow">
           <h1>{property.name}</h1>
           <p className="muted small">
-            {rooms.length} rooms · {photos.length} photos · {open} open items · est. {range(t.low, t.high)}
+            {new Date(property.createdAt).toLocaleDateString()}
+            {property.inspector ? ` · ${property.inspector}` : ""} · {rooms.length} rooms · {photos.length} photos · {open} open
+            items · est. {range(t.low, t.high)}
           </p>
+          <div className="row tight wrap">
+            <select
+              className="small"
+              value={property.turnType ?? ""}
+              onChange={(e) => store.putProperty({ ...property, turnType: (e.target.value || undefined) as TurnType | undefined }).then(data.reload)}
+              aria-label="Turn type"
+            >
+              <option value="">Turn type…</option>
+              {TURN_TYPES.map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+            {property.status === "complete" ? (
+              <button
+                className="btn small"
+                onClick={() => store.putProperty({ ...property, status: "in_progress", completedAt: undefined }).then(data.reload)}
+              >
+                ✓ Complete {property.completedAt ? new Date(property.completedAt).toLocaleDateString() : ""} · reopen
+              </button>
+            ) : (
+              <button
+                className="btn small primary"
+                onClick={() => store.putProperty({ ...property, status: "complete", completedAt: Date.now() }).then(data.reload)}
+              >
+                Mark inspection complete
+              </button>
+            )}
+          </div>
         </div>
       </div>
       <nav className="tabs no-print">

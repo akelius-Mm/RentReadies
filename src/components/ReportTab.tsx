@@ -20,7 +20,7 @@ export default function ReportTab({ data }: { data: PropertyData }) {
   const byTrade = TRADES.map((tr) => ({ trade: tr, list: items.filter((i) => i.trade === tr) })).filter((x) => x.list.length);
 
   const exportCsv = () => {
-    const header = ["Room", "Item", "Category", "Severity", "Trade", "Status", "Cost low", "Cost high", "Details", "Recommended fix", "Source"];
+    const header = ["Room", "Item", "Category", "Severity", "Trade", "Status", "Cost low", "Cost high", "Details", "Recommended fix", "Source", "Owner", "Due", "Completed"];
     const rows = items.map((i) => [
       rooms.find((r) => r.id === i.roomId)?.name ?? "",
       i.title,
@@ -33,6 +33,9 @@ export default function ReportTab({ data }: { data: PropertyData }) {
       i.description,
       i.recommendedAction,
       i.source,
+      i.assignee ?? "",
+      i.dueDate ?? "",
+      i.completedAt ? new Date(i.completedAt).toISOString().slice(0, 10) : "",
     ]);
     const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const a = document.createElement("a");
@@ -68,6 +71,11 @@ export default function ReportTab({ data }: { data: PropertyData }) {
         <p>
           <b>{property.name}</b>
           {property.address ? ` — ${property.address}` : ""}
+        </p>
+        <p className="small">
+          {property.turnType ?? "Turn type not set"} · inspected {new Date(property.createdAt).toLocaleDateString()}
+          {property.inspector ? ` by ${property.inspector}` : ""}
+          {property.status === "complete" && property.completedAt ? ` · completed ${new Date(property.completedAt).toLocaleDateString()}` : ""}
         </p>
         <p className="muted small">Prepared {new Date().toLocaleDateString()} · Costs are estimates; confirm with vendors.</p>
       </header>

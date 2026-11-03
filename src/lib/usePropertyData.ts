@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { store } from "./db";
+import { onRemoteData } from "./sync";
 import type { InventoryItem, Issue, Photo, Property, Room, Severity } from "./types";
 import { activeIssues, worstSeverity } from "./format";
 
@@ -27,6 +28,8 @@ export function usePropertyData(propertyId: string) {
 
   useEffect(() => {
     reload();
+    // Changes made by teammates arrive through sync.
+    return onRemoteData(reload);
   }, [reload]);
 
   const derived = useMemo(() => {

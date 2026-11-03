@@ -1,13 +1,24 @@
 import { useEffect, useState } from "react";
 
+function read() {
+  const raw = window.location.hash.slice(1) || "/";
+  const [path, query = ""] = raw.split("?");
+  return { parts: path.split("/").filter(Boolean), query: new URLSearchParams(query) };
+}
+
 export function useHashRoute() {
-  const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
+  return useHashLocation().parts;
+}
+
+/** Path parts and ?query of the hash, e.g. #/followup?filter=overdue. */
+export function useHashLocation() {
+  const [loc, setLoc] = useState(read);
   useEffect(() => {
-    const on = () => setHash(window.location.hash.slice(1) || "/");
+    const on = () => setLoc(read());
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  return hash.split("/").filter(Boolean);
+  return loc;
 }
 
 export const go = (path: string) => {

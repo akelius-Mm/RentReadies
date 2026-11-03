@@ -86,7 +86,13 @@ export interface Issue {
   bbox?: BBox | null;
   source: "ai" | "manual";
   status: IssueStatus;
+  /** Follow-up: who is responsible and by when. */
+  assignee?: string;
+  dueDate?: string; // YYYY-MM-DD
+  completedAt?: number;
   createdAt: number;
+  updatedAt?: number;
+  updatedBy?: string;
 }
 
 export interface Photo {
@@ -95,13 +101,15 @@ export interface Photo {
   roomId: string;
   shotId: string; // key from the room's shot list, or "extra"
   label: string;
-  blob: Blob; // resized JPEG
+  /** Resized JPEG. Missing on devices that only have the record; then it loads from the server. */
+  blob?: Blob;
   width: number;
   height: number;
   createdAt: number;
   analyzedAt?: number;
   /** "scan" = taken by RR Scan during the LiDAR walk-through. */
   source?: "scan";
+  updatedAt?: number;
   /** Where the camera was, for photos taken during a LiDAR scan (same coordinates as the scan). */
   pose?: PhotoPose;
 }
@@ -137,15 +145,25 @@ export interface Room {
   aiSummary?: string;
   aiMissingShots?: string[];
   createdAt: number;
+  updatedAt?: number;
 }
 
+export const TURN_TYPES = ["Light turn", "Full turn", "Renovation", "Move-in", "Move-out", "Other"] as const;
+export type TurnType = (typeof TURN_TYPES)[number];
+
+/** One inspection of one unit. A unit inspected again later gets a new record with the same name. */
 export interface Property {
   id: string;
-  name: string; // e.g. "123 Main St #4B"
+  name: string; // unit, e.g. "123 Main St #4B"
   address?: string;
+  turnType?: TurnType;
+  inspector?: string;
+  status?: "in_progress" | "complete";
+  completedAt?: number;
   createdAt: number;
   updatedAt: number;
-  scan?: { fileName: string; blob: Blob; format: ScanFormat } | null;
+  /** LiDAR/3D scan. The file itself syncs separately; `blob` is only on devices that have downloaded it. */
+  scan?: { fileName: string; blob?: Blob; blobId?: string; format: ScanFormat } | null;
 }
 
 export type ScanFormat = "glb" | "gltf" | "obj" | "ply" | "usdz" | "roomplan";
@@ -204,6 +222,7 @@ export interface InventoryItem extends InventoryFields {
   /** RoomPlan object category, for items that came from a LiDAR scan. */
   scanCategory?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // ---- LiDAR scan (written by the RR Scan iPhone app, RoomPlan) ------------------

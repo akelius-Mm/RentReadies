@@ -14,6 +14,8 @@ import {
   type AnalyzeRequest,
   type AnalyzeResponse,
 } from "../src/lib/types.js";
+import { blobPath, pullRecords, pushRecords, type SyncRecord } from "./db.js";
+import { ask, stats } from "./insights.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
@@ -310,6 +312,83 @@ app.post("/api/analyze", async (req, res) => {
       console.error(err);
       res.status(500).json({ error: "Unexpected server error." });
     }
+  }
+});
+
+// ---- Shared record: sync, files, dashboard, ask ---------------------------
+// Everything below needs the team passcode (when one is set).
+const requirePasscode: express.RequestHandler = (req, res, next) => {
+  if (passcodeOk(req.get("x-app-passcode"))) return next();
+  res.status(401).json({ error: "Wrong or missing passcode.", passcode: true });
+};
+
+app.post("/api/sync/push", requirePasscode, (req, res) => {
+  const records = (req.body?.records ?? []) as SyncRecord[];
+  if (!Array.isArray(records) || records.length > 5000) {
+    res.status(400).json({ error: "Bad sync batch." });
+    return;
+  }
+  res.json(pushRecords(records));
+});
+
+app.get("/api/sync/pull", requirePasscode, (req, res) => {
+  res.json(pullRecords(Number(req.query.since) || 0));
+});
+
+// Photos and scan files, stored on the server's disk by id.
+app.put("/api/blobs/:id", requirePasscode, express.raw({ type: () => true, limit: "100mb" }), (req, res) => {
+  const file = blobPath(String(req.params.id));
+  if (!file || !Buffer.isBuffer(req.body) || !req.body.length) {
+    res.status(400).json({ error: "Bad file." });
+    return;
+  }
+  fs.writeFileSync(file, req.body);
+  fs.writeFileSync(file + ".type", req.get("content-type") ?? "application/octet-stream");
+  res.json({ ok: true });
+});
+
+app.head("/api/blobs/:id", requirePasscode, (req, res) => {
+  const file = blobPath(String(req.params.id));
+  res.status(file && fs.existsSync(file) ? 200 : 404).end();
+});
+
+app.get("/api/blobs/:id", (req, res) => {
+  // <img> tags can't send headers, so photos also accept the passcode as ?k=.
+  if (!passcodeOk(req.get("x-app-passcode") ?? req.query.k)) {
+    res.status(401).end();
+    return;
+  }
+  const file = blobPath(String(req.params.id));
+  if (!file || !fs.existsSync(file)) {
+    res.status(404).end();
+    return;
+  }
+  const type = fs.existsSync(file + ".type") ? fs.readFileSync(file + ".type", "utf8") : "application/octet-stream";
+  res.set("Content-Type", type).set("Cache-Control", "private, max-age=31536000, immutable").sendFile(file);
+});
+
+app.get("/api/stats", requirePasscode, (_req, res) => {
+  res.json(stats());
+});
+
+app.post("/api/ask", requirePasscode, async (req, res) => {
+  const question = String(req.body?.question ?? "").trim().slice(0, 1000);
+  if (!question) {
+    res.status(400).json({ error: "Type a question." });
+    return;
+  }
+  const status = await checkAi();
+  if (!status.ready) {
+    res.status(503).json({ error: status.error ?? "AI is not available." });
+    return;
+  }
+  try {
+    res.json(await ask(client, question));
+  } catch (err) {
+    console.error(err);
+    res.status(err instanceof Anthropic.RateLimitError ? 429 : 502).json({
+      error: err instanceof Anthropic.RateLimitError ? "AI service is busy. Try again in a minute." : "Couldn't answer right now. Try again.",
+    });
   }
 });
 

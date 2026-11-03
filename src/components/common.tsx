@@ -3,6 +3,14 @@ import type { Issue, IssueStatus, Photo, Room } from "../lib/types";
 import { CATEGORY_LABELS, ISSUE_CATEGORIES, SEVERITIES, TRADES } from "../lib/types";
 import { SEVERITY_COLOR, range } from "../lib/format";
 import { store, uid } from "../lib/db";
+import { remotePhotoUrl } from "../lib/sync";
+import { myName } from "../lib/me";
+
+/** Image URL for a photo: the copy on this phone, or the shared copy on the server. */
+export function usePhotoUrl(photo: Photo) {
+  const local = useObjectUrl(photo.blob);
+  return photo.blob ? local : remotePhotoUrl(photo.id);
+}
 
 export function useObjectUrl(blob?: Blob) {
   const [url, setUrl] = useState<string>();
@@ -27,7 +35,7 @@ export function PhotoWithBoxes({
   /** Label for each box; defaults to the issue's position among this photo's issues. */
   numberOf?: (issue: Issue) => number;
 }) {
-  const url = useObjectUrl(photo.blob);
+  const url = usePhotoUrl(photo);
   const onPhoto = issues.filter((i) => i.photoId === photo.id && i.status !== "dismissed");
   const boxes = onPhoto.filter((i) => i.bbox);
   return (
@@ -54,7 +62,7 @@ export function PhotoWithBoxes({
 }
 
 export function Thumb({ photo, onClick, badge }: { photo: Photo; onClick?: () => void; badge?: number }) {
-  const url = useObjectUrl(photo.blob);
+  const url = usePhotoUrl(photo);
   return (
     <button className="thumb" onClick={onClick} title={photo.label}>
       {url && <img src={url} alt={photo.label} loading="lazy" />}
@@ -113,9 +121,15 @@ export function IssueCard({
   onOpenPhoto?: () => void;
 }) {
   const setStatus = async (status: IssueStatus) => {
-    await store.putIssue({ ...issue, status });
+    await store.putIssue({
+      ...issue,
+      status,
+      completedAt: status === "done" ? (issue.completedAt ?? Date.now()) : undefined,
+      updatedBy: myName() || undefined,
+    });
     onChanged();
   };
+  const overdue = issue.dueDate && issue.status !== "done" && issue.status !== "dismissed" && issue.dueDate < new Date().toISOString().slice(0, 10);
   return (
     <div className={`issue ${issue.status}`}>
       {photo && <Thumb photo={photo} onClick={onOpenPhoto} />}
@@ -129,6 +143,12 @@ export function IssueCard({
           {CATEGORY_LABELS[issue.category]} · {issue.trade} · {range(issue.estCostLow, issue.estCostHigh)}
           {issue.source === "ai" && issue.confidence !== undefined ? ` · AI ${Math.round(issue.confidence * 100)}%` : ""}
         </div>
+        {(issue.assignee || issue.dueDate) && (
+          <div className={`small ${overdue ? "error-text" : ""}`}>
+            {issue.assignee ? `👤 ${issue.assignee}` : "No owner"}
+            {issue.dueDate ? ` · due ${issue.dueDate}${overdue ? " (overdue)" : ""}` : ""}
+          </div>
+        )}
         {issue.description && <p className="small">{issue.description}</p>}
         {issue.recommendedAction && (
           <p className="small">
@@ -205,7 +225,12 @@ export function IssueEditor({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    await store.putIssue({ ...f, estCostHigh: Math.max(f.estCostLow, f.estCostHigh) });
+    await store.putIssue({
+      ...f,
+      estCostHigh: Math.max(f.estCostLow, f.estCostHigh),
+      completedAt: f.status === "done" ? (f.completedAt ?? Date.now()) : undefined,
+      updatedBy: myName() || undefined,
+    });
     onSaved();
     onClose();
   };
@@ -276,6 +301,16 @@ export function IssueEditor({
               <input type="number" min={0} value={f.estCostHigh} onChange={(e) => set("estCostHigh", Number(e.target.value))} />
             </label>
           </div>
+        </div>
+        <div className="grid2">
+          <label>
+            Owner
+            <input value={f.assignee ?? ""} onChange={(e) => set("assignee", e.target.value || undefined)} placeholder="Who's handling it" />
+          </label>
+          <label>
+            Due
+            <input type="date" value={f.dueDate ?? ""} onChange={(e) => set("dueDate", e.target.value || undefined)} />
+          </label>
         </div>
         <label>
           Details

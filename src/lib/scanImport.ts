@@ -111,7 +111,13 @@ const ROOM_TYPES: RoomType[] = ["kitchen", "bathroom", "bedroom", "living", "din
 export async function importRoomPlanScan(property: Property, existingRooms: Room[], scan: RRScan, fileName: string) {
   await store.putProperty({
     ...property,
-    scan: { fileName, blob: new Blob([JSON.stringify(scan)], { type: "application/json" }), format: "roomplan" },
+    // Photos are stored as room photos below, so the saved 3D file only keeps the geometry.
+    scan: {
+      fileName,
+      blob: new Blob([JSON.stringify({ ...scan, rooms: scan.rooms.map(({ photos: _photos, ...r }) => r) })], { type: "application/json" }),
+      blobId: `scan-${uid()}`,
+      format: "roomplan",
+    },
   });
 
   // Clear links to any previous scan.

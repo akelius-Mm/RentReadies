@@ -1,6 +1,7 @@
 *.log
 *.tsbuildinfo
 .env
+data/
 dist
 ios/RRScan/*.xcodeproj
 ios/RRScan/DerivedData

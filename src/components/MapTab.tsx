@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PropertyData } from "../lib/usePropertyData";
 import Scene3D, { type IssueRay } from "./Scene3D";
-import { store } from "../lib/db";
+import { store, uid } from "../lib/db";
 import { autoArrange } from "../lib/rooms";
 import { go } from "../lib/router";
 import { SEVERITY_COLOR } from "../lib/format";
@@ -9,6 +9,7 @@ import { SEVERITIES, type ScanFormat } from "../lib/types";
 import { templateFor } from "../lib/roomTemplates";
 import { analyzeRoom, createScanSlot, fetchScan, scanAppLink } from "../lib/api";
 import { importRoomPlanScan, isRRScan, photoRay } from "../lib/scanImport";
+import { scanBlob } from "../lib/sync";
 import type { RRScan } from "../lib/types";
 
 const FORMATS: (ScanFormat | "json")[] = ["json", "glb", "gltf", "obj", "ply", "usdz"];
@@ -105,6 +106,16 @@ export default function MapTab({ data, aiEnabled }: { data: PropertyData; aiEnab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lidar]);
 
+  // A scan made on another phone: fetch the 3D file the first time this unit's map is opened here.
+  useEffect(() => {
+    if (property?.scan && !property.scan.blob && property.scan.blobId && navigator.onLine) {
+      scanBlob(property)
+        .then(() => reload())
+        .catch(() => setError("Couldn't download the 3D scan. Check your connection."));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [property?.scan?.blobId]);
+
   if (!property) return null;
 
   const startLidar = async () => {
@@ -139,7 +150,7 @@ export default function MapTab({ data, aiEnabled }: { data: PropertyData; aiEnab
       return;
     }
     if (ext === "roomplan") return;
-    await store.putProperty({ ...property, scan: { fileName: file.name, blob: file, format: ext } });
+    await store.putProperty({ ...property, scan: { fileName: file.name, blob: file, blobId: `scan-${uid()}`, format: ext } });
     // Old markers belong to the old model.
     for (const r of rooms) if (r.scanMarker) await store.putRoom({ ...r, scanMarker: null });
     await reload();
