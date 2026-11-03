@@ -9,11 +9,17 @@ a printable report.
 
 1. **Add a unit** and pick a layout (studio, 2 bed / 1 bath, 3 bed / 2 bath) or add rooms one by one.
 2. **3D map**
+   - *LiDAR scan* (iPhone / iPad Pro): tap **LiDAR scan** and the **RR Scan** app (`ios/RRScan`, built on Apple's
+     RoomPlan) opens with the unit's rooms. Scan each room; when you send it back, RentReadies imports it by
+     itself: each room gets its measured size and real position, the 3D view shows the walls, doors, windows
+     and appliances with each room's floor colored by its worst problem, and detected appliances and fixtures
+     (refrigerator, range, oven, dishwasher, washer/dryer, sink, toilet, tub) go into Appliances & finishes with
+     measured dimensions. The AI later adds brand, model and finish to those same items. See
+     [ios/RRScan/README.md](ios/RRScan/README.md) to build and install the scanner.
    - *Floor plan*: a 3D model built from the rooms. Drag rooms to match the real layout and set sizes under
      "Room details". Rooms are colored by their worst open issue.
-   - *3D scan*: import a LiDAR scan (`.glb`, `.obj`, `.ply`, `.usdz`) from an app like Polycam, Scaniverse or
-     3D Scanner App on an iPhone/iPad Pro, or a Matterport export. Pin each room on the scan, then tap a pin to
-     open that room.
+   - *Other scan files*: you can also import `.glb`, `.obj`, `.ply` or `.usdz` from Polycam, Scaniverse or
+     Matterport and pin each room by hand.
 3. **Rooms & photos**: each room type has its own photo checklist (for example under the kitchen sink, inside
    the oven, toilet base, exhaust fan, air vents). On a phone, each item opens the camera.
 4. **Inspect with AI**: sends the room's photos to Claude, which returns each problem with category, severity,

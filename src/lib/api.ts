@@ -1,5 +1,6 @@
 import { blobToBase64 } from "./image";
 import { store, uid } from "./db";
+import { matchesScanCategory } from "./scanImport";
 import type { AnalyzeRequest, AnalyzeResponse, InventoryItem, Issue, Photo, Room } from "./types";
 
 const PASSCODE_KEY = "rr-passcode";
@@ -19,7 +20,7 @@ export function setPasscode(v: string) {
   memoryPasscode = v;
 }
 let memoryPasscode = "";
-const authHeaders = (): Record<string, string> => {
+export const authHeaders = (): Record<string, string> => {
   const p = getPasscode() || memoryPasscode;
   return p ? { "x-app-passcode": p } : {};
 };
@@ -106,10 +107,63 @@ export async function analyzeRoom(room: Room, photos: Photo[], onProgress?: (don
   // Replace earlier AI findings the user hasn't acted on; keep approved/manual ones.
   await store.clearUntouchedAiIssues(room.id);
   await store.putIssues(newIssues);
-  await store.replaceAiInventory(room.id, [...inventory.values()]);
+  // Fold AI details (brand, model, finish, condition) into items the LiDAR scan already measured,
+  // so each appliance appears once with both its size and its details.
+  const scanned = (await store.inventory(room.propertyId)).filter((i) => i.roomId === room.id && i.source === "scan");
+  const aiItems: InventoryItem[] = [];
+  for (const it of inventory.values()) {
+    const match = scanned.find((s) => matchesScanCategory(s.scanCategory, it.item));
+    if (!match) {
+      aiItems.push(it);
+      continue;
+    }
+    scanned.splice(scanned.indexOf(match), 1);
+    const measured = match.notes.match(/Measured by LiDAR:[^.]*/)?.[0];
+    await store.putInventoryItem({
+      ...match,
+      item: it.item || match.item,
+      type: it.type,
+      colorFinish: it.colorFinish,
+      brand: it.brand,
+      model: it.model,
+      condition: it.condition,
+      notes: [it.notes, measured].filter(Boolean).join(". "),
+      photoId: it.photoId,
+      confidence: it.confidence,
+    });
+  }
+  await store.replaceAiInventory(room.id, aiItems);
   const now = Date.now();
   for (const p of photos) await store.putPhoto({ ...p, analyzedAt: now });
   const missingShots = [...missing];
   await store.putRoom({ ...room, analyzedAt: now, aiSummary: summaries.join(" "), aiMissingShots: missingShots });
   return { count: newIssues.length, inventoryCount: inventory.size, summary: summaries.join(" "), missingShots };
+}
+
+// ---- LiDAR scan hand-off with the RR Scan iPhone app ----------------------------
+
+export async function createScanSlot(): Promise<string> {
+  const res = await fetch("/api/scans", { method: "POST", headers: authHeaders() });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}`);
+  return json.id as string;
+}
+
+/** null while the scan hasn't arrived yet. */
+export async function fetchScan(id: string): Promise<unknown | null> {
+  const res = await fetch(`/api/scans/${id}`, { cache: "no-store" });
+  if (res.status === 202) return null;
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}`);
+  return json;
+}
+
+/** Deep link that opens RR Scan with this unit's rooms and where to send the result. */
+export function scanAppLink(slotId: string, unitName: string, rooms: { name: string; type: string }[]) {
+  const q = new URLSearchParams({
+    upload: `${location.origin}/api/scans/${slotId}`,
+    unit: unitName,
+    rooms: JSON.stringify(rooms),
+  });
+  return `rentreadies-scan://scan?${q}`;
 }

@@ -2,7 +2,7 @@ import express from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { timingSafeEqual, createHash } from "node:crypto";
+import crypto, { timingSafeEqual, createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   CATEGORY_LABELS,
@@ -310,6 +310,64 @@ app.post("/api/analyze", async (req, res) => {
       res.status(500).json({ error: "Unexpected server error." });
     }
   }
+});
+
+// ---- LiDAR scan hand-off --------------------------------------------------
+// The web app opens a slot, launches the RR Scan iPhone app with the slot's upload URL, and polls.
+// The slot id is a random UUID and works as a one-time upload token, so no passcode goes into the link.
+const SCAN_TTL_MS = 2 * 60 * 60 * 1000;
+const scanSlots = new Map<string, { createdAt: number; scan?: unknown }>();
+const sweepScans = () => {
+  for (const [id, s] of scanSlots) if (Date.now() - s.createdAt > SCAN_TTL_MS) scanSlots.delete(id);
+};
+const isScan = (b: unknown): b is { format: string; rooms: unknown[] } =>
+  typeof b === "object" && b !== null && (b as { format?: unknown }).format === "rentreadies-roomplan" && Array.isArray((b as { rooms?: unknown }).rooms);
+
+app.post("/api/scans", (req, res) => {
+  if (!passcodeOk(req.get("x-app-passcode"))) {
+    res.status(401).json({ error: "Wrong or missing passcode.", passcode: true });
+    return;
+  }
+  sweepScans();
+  if (scanSlots.size > 200) {
+    res.status(429).json({ error: "Too many open scans. Try again later." });
+    return;
+  }
+  const id = crypto.randomUUID();
+  scanSlots.set(id, { createdAt: Date.now() });
+  res.json({ id });
+});
+
+app.put("/api/scans/:id", (req, res) => {
+  const slot = scanSlots.get(req.params.id);
+  if (!slot) {
+    res.status(404).json({ error: "This scan link expired. Start the scan again from RentReadies." });
+    return;
+  }
+  if (slot.scan) {
+    res.status(409).json({ error: "A scan was already sent for this link." });
+    return;
+  }
+  if (!isScan(req.body)) {
+    res.status(400).json({ error: "Not a RentReadies scan file." });
+    return;
+  }
+  slot.scan = req.body;
+  res.json({ ok: true, rooms: req.body.rooms.length });
+});
+
+app.get("/api/scans/:id", (req, res) => {
+  const slot = scanSlots.get(req.params.id);
+  if (!slot) {
+    res.status(404).json({ error: "Scan link expired." });
+    return;
+  }
+  if (!slot.scan) {
+    res.status(202).json({ pending: true });
+    return;
+  }
+  res.json(slot.scan);
+  scanSlots.delete(req.params.id); // one-time pickup
 });
 
 // Serve the built front end in production.

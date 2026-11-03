@@ -116,6 +116,8 @@ export interface Room {
   y: number;
   // Optional marker placed on an imported 3D scan.
   scanMarker?: [number, number, number] | null;
+  /** Index of this room in a LiDAR (RoomPlan) scan, when the room came from one. */
+  scanIndex?: number | null;
   notes?: string;
   analyzedAt?: number;
   aiSummary?: string;
@@ -132,7 +134,7 @@ export interface Property {
   scan?: { fileName: string; blob: Blob; format: ScanFormat } | null;
 }
 
-export type ScanFormat = "glb" | "gltf" | "obj" | "ply" | "usdz";
+export type ScanFormat = "glb" | "gltf" | "obj" | "ply" | "usdz" | "roomplan";
 
 export type RoomType =
   | "kitchen"
@@ -183,8 +185,43 @@ export interface InventoryItem extends InventoryFields {
   roomId: string;
   photoId?: string;
   confidence?: number;
-  source: "ai" | "manual";
+  /** "scan" = detected by the LiDAR scan (with measured size); AI details are merged into it. */
+  source: "ai" | "manual" | "scan";
+  /** RoomPlan object category, for items that came from a LiDAR scan. */
+  scanCategory?: string;
   createdAt: number;
+}
+
+// ---- LiDAR scan (written by the RR Scan iPhone app, RoomPlan) ------------------
+// Coordinates are meters, y up, in one shared space for the whole unit.
+// transform is a 4x4 matrix in column-major order; dimensions are [width, height, depth].
+
+export interface RRScanSurface {
+  transform: number[];
+  dimensions: [number, number, number];
+}
+
+export interface RRScanObject extends RRScanSurface {
+  category: string; // refrigerator, stove, oven, dishwasher, washerDryer, sink, toilet, bathtub, ...
+}
+
+export interface RRScanRoom {
+  name: string;
+  type: RoomType;
+  walls: RRScanSurface[];
+  doors: RRScanSurface[];
+  windows: RRScanSurface[];
+  openings: RRScanSurface[];
+  objects: RRScanObject[];
+}
+
+export interface RRScan {
+  format: "rentreadies-roomplan";
+  version: 1;
+  createdAt: string;
+  unitName?: string;
+  device?: string;
+  rooms: RRScanRoom[];
 }
 
 // ---- API contract -------------------------------------------------------

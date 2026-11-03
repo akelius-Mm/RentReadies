@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
@@ -6,7 +6,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { USDZLoader } from "three/examples/jsm/loaders/USDZLoader.js";
-import type { Room, ScanFormat, Severity } from "../lib/types";
+import type { Room, RRScan, ScanFormat, Severity } from "../lib/types";
+import { isRRScan, roomBounds } from "../lib/scanImport";
 import { SEVERITY_COLOR } from "../lib/format";
 
 export interface Scene3DProps {
@@ -36,6 +37,8 @@ interface Ctx {
   pickables: THREE.Object3D[];
   scanMeshes: THREE.Object3D[];
   scanSize: number;
+  /** Parsed LiDAR scan, when the scan is a RoomPlan scan from the RR Scan app. */
+  roomplan: RRScan | null;
 }
 
 export default function Scene3D(props: Scene3DProps) {
@@ -43,6 +46,7 @@ export default function Scene3D(props: Scene3DProps) {
   const ctxRef = useRef<Ctx | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
+  const [loadedScanKey, setLoadedScanKey] = useState("");
 
   // --- one-time setup -----------------------------------------------------
   useEffect(() => {
@@ -74,7 +78,7 @@ export default function Scene3D(props: Scene3DProps) {
 
     const ctx: Ctx = {
       renderer, labelRenderer, scene, camera, controls, planGroup, scanGroup, markerGroup,
-      pickables: [], scanMeshes: [], scanSize: 10,
+      pickables: [], scanMeshes: [], scanSize: 10, roomplan: null,
     };
     ctxRef.current = ctx;
 
@@ -143,7 +147,7 @@ export default function Scene3D(props: Scene3DProps) {
       if (!isClick) return;
       setNdc(e);
       if (p.mode === "scan" && p.placingRoomId) {
-        const hit = raycaster.intersectObjects(ctx.scanMeshes, true)[0];
+        const hit = raycaster.intersectObjects([...ctx.scanMeshes, ...ctx.markerGroup.children], true)[0];
         if (hit) p.onPlaceMarker?.(p.placingRoomId, [hit.point.x, hit.point.y, hit.point.z]);
         return;
       }
@@ -239,22 +243,36 @@ export default function Scene3D(props: Scene3DProps) {
     if (!ctx) return;
     clearGroup(ctx.scanGroup);
     ctx.scanMeshes = [];
+    ctx.roomplan = null;
     const scan = propsRef.current.scan;
     if (!scan) return;
     let cancelled = false;
     const url = URL.createObjectURL(scan.blob);
-    loadScan(url, scan.format)
+    const load =
+      scan.format === "roomplan"
+        ? scan.blob.text().then((t) => {
+            const parsed = JSON.parse(t);
+            if (!isRRScan(parsed)) throw new Error("Not a RentReadies LiDAR scan");
+            ctx.roomplan = parsed;
+            return buildRoomPlan(parsed);
+          })
+        : loadScan(url, scan.format);
+    load
       .then((obj) => {
         if (cancelled) return;
-        // Center on origin with the floor at y=0 so marker coordinates stay stable.
+        // LiDAR scans keep their own coordinates (room pins are stored in them). Other files are
+        // centered with the floor at y=0 so marker coordinates stay stable.
         const box = new THREE.Box3().setFromObject(obj);
-        const center = box.getCenter(new THREE.Vector3());
-        obj.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+        if (scan.format !== "roomplan") {
+          const center = box.getCenter(new THREE.Vector3());
+          obj.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+        }
         ctx.scanGroup.add(obj);
         ctx.scanMeshes = [obj];
         const size = box.getSize(new THREE.Vector3());
         ctx.scanSize = Math.max(size.x, size.y, size.z) || 10;
         if (propsRef.current.mode === "scan") frame(ctx, new THREE.Box3().setFromObject(ctx.scanGroup));
+        setLoadedScanKey(scanKey);
       })
       .catch((err) => {
         console.error(err);
@@ -283,6 +301,25 @@ export default function Scene3D(props: Scene3DProps) {
     if (props.mode !== "scan") return;
     const r = Math.max(0.08, ctx.scanSize * 0.015);
     for (const room of props.rooms) {
+      // LiDAR rooms: color the measured floor by the room's worst open problem.
+      const scanned = room.scanIndex != null ? ctx.roomplan?.rooms[room.scanIndex] : undefined;
+      const b = scanned ? roomBounds(scanned) : null;
+      if (b) {
+        const sev = props.severityByRoom[room.id];
+        const g = new THREE.Group();
+        g.userData.roomId = room.id;
+        const floor = new THREE.Mesh(
+          new THREE.BoxGeometry(b.maxX - b.minX, 0.04, b.maxZ - b.minZ),
+          new THREE.MeshStandardMaterial({ color: sev ? SEVERITY_COLOR[sev] : NEUTRAL, transparent: true, opacity: 0.75 }),
+        );
+        floor.position.set((b.minX + b.maxX) / 2, b.floorY + 0.02, (b.minZ + b.maxZ) / 2);
+        g.add(floor);
+        const label = makeLabel(room.name, props.issueCountByRoom[room.id] ?? 0, sev, room.id, 0);
+        label.position.copy(floor.position).setY(b.ceilingY + 0.2);
+        g.add(label);
+        ctx.markerGroup.add(g);
+        continue;
+      }
       if (!room.scanMarker) continue;
       const sev = props.severityByRoom[room.id];
       const g = new THREE.Group();
@@ -297,7 +334,7 @@ export default function Scene3D(props: Scene3DProps) {
       g.add(makeLabel(room.name, props.issueCountByRoom[room.id] ?? 0, sev, room.id, r * 2.5));
       ctx.markerGroup.add(g);
     }
-  }, [props.mode, props.rooms, props.severityByRoom, props.issueCountByRoom, scanKey]);
+  }, [props.mode, props.rooms, props.severityByRoom, props.issueCountByRoom, scanKey, loadedScanKey]);
 
   useEffect(() => {
     const el = ctxRef.current?.renderer.domElement;
@@ -318,6 +355,46 @@ function makeLabel(name: string, count: number, sev: Severity | null | undefined
   return obj;
 }
 
+// Colors for the parametric LiDAR model.
+const WALL = 0xdfe3ea;
+const DOOR = 0x9c6b3f;
+const WINDOW = 0x7fb8e6;
+const OBJECT_COLORS: Record<string, number> = {
+  refrigerator: 0xb8c4d6,
+  stove: 0x5c6470,
+  oven: 0x5c6470,
+  dishwasher: 0xa3adbb,
+  washerDryer: 0xc9d3e0,
+  sink: 0x8fb3c9,
+  toilet: 0xf2f4f7,
+  bathtub: 0xf2f4f7,
+  storage: 0xc8a97e,
+};
+
+/** Build walls, doors, windows, and objects from a RoomPlan scan (meters, y up). */
+function buildRoomPlan(scan: RRScan): THREE.Group {
+  const group = new THREE.Group();
+  const box = (s: { transform: number[]; dimensions: [number, number, number] }, color: number, minDepth: number, opacity = 1) => {
+    const [w, h, d] = s.dimensions;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.max(w, 0.01), Math.max(h, 0.01), Math.max(d, minDepth)),
+      new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, roughness: 0.85, depthWrite: opacity === 1 }),
+    );
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.fromArray(s.transform);
+    group.add(mesh);
+    return mesh;
+  };
+  for (const room of scan.rooms) {
+    room.walls.forEach((w) => box(w, WALL, 0.1, 0.6));
+    room.doors.forEach((d) => box(d, DOOR, 0.14));
+    room.windows.forEach((w) => box(w, WINDOW, 0.14, 0.7));
+    room.objects.forEach((o) => box(o, OBJECT_COLORS[o.category] ?? 0xb0b6bf, 0.02, 0.95));
+  }
+  group.updateMatrixWorld(true);
+  return group;
+}
+
 function frame(ctx: Ctx, box: THREE.Box3) {
   if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
@@ -329,7 +406,7 @@ function frame(ctx: Ctx, box: THREE.Box3) {
   ctx.camera.updateProjectionMatrix();
 }
 
-async function loadScan(url: string, format: ScanFormat): Promise<THREE.Object3D> {
+async function loadScan(url: string, format: Exclude<ScanFormat, "roomplan">): Promise<THREE.Object3D> {
   switch (format) {
     case "glb":
     case "gltf":

@@ -239,3 +239,4 @@ button.link { background: none; border: 0; padding: 0; color: #1b5fc1; font: inh
   .sticky-actions .btn.primary { flex: 1; justify-content: center; }
   .sticky-actions p { margin: 6px 0 0; }
 }
+.notice { background: #e6f4f1; border: 1px solid #b8e0d8; border-radius: 8px; padding: 8px 10px; }

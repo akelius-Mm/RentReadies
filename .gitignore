@@ -1,5 +1,7 @@
-node_modules
-dist
-.env
 *.log
 *.tsbuildinfo
+.env
+dist
+ios/RRScan/*.xcodeproj
+ios/RRScan/DerivedData
+node_modules
