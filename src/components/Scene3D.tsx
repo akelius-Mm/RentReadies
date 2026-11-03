@@ -21,6 +21,17 @@ export interface Scene3DProps {
   onMoveRoom?: (roomId: string, x: number, y: number) => void;
   onPlaceMarker?: (roomId: string, point: [number, number, number]) => void;
   onScanError?: (message: string) => void;
+  /** Problems located in 3D: a ray from the camera through the problem on its scan photo. */
+  issueRays?: IssueRay[];
+}
+
+export interface IssueRay {
+  id: string;
+  roomId: string;
+  severity: Severity;
+  title: string;
+  origin: [number, number, number];
+  dir: [number, number, number];
 }
 
 const NEUTRAL = "#8d99ae";
@@ -34,6 +45,7 @@ interface Ctx {
   planGroup: THREE.Group;
   scanGroup: THREE.Group;
   markerGroup: THREE.Group;
+  pinGroup: THREE.Group;
   pickables: THREE.Object3D[];
   scanMeshes: THREE.Object3D[];
   scanSize: number;
@@ -74,10 +86,11 @@ export default function Scene3D(props: Scene3DProps) {
     const planGroup = new THREE.Group();
     const scanGroup = new THREE.Group();
     const markerGroup = new THREE.Group();
-    scene.add(planGroup, scanGroup, markerGroup);
+    const pinGroup = new THREE.Group();
+    scene.add(planGroup, scanGroup, markerGroup, pinGroup);
 
     const ctx: Ctx = {
-      renderer, labelRenderer, scene, camera, controls, planGroup, scanGroup, markerGroup,
+      renderer, labelRenderer, scene, camera, controls, planGroup, scanGroup, markerGroup, pinGroup,
       pickables: [], scanMeshes: [], scanSize: 10, roomplan: null,
     };
     ctxRef.current = ctx;
@@ -151,7 +164,7 @@ export default function Scene3D(props: Scene3DProps) {
         if (hit) p.onPlaceMarker?.(p.placingRoomId, [hit.point.x, hit.point.y, hit.point.z]);
         return;
       }
-      const targets = p.mode === "plan" ? ctx.pickables : ctx.markerGroup.children;
+      const targets = p.mode === "plan" ? ctx.pickables : [...ctx.pinGroup.children, ...ctx.markerGroup.children];
       const hit = raycaster.intersectObjects(targets, true)[0];
       let o: THREE.Object3D | null = hit?.object ?? null;
       while (o && !o.userData.roomId) o = o.parent;
@@ -289,6 +302,7 @@ export default function Scene3D(props: Scene3DProps) {
     if (!ctx) return;
     ctx.scanGroup.visible = props.mode === "scan";
     ctx.markerGroup.visible = props.mode === "scan";
+    ctx.pinGroup.visible = props.mode === "scan";
     if (props.mode === "scan" && ctx.scanGroup.children.length) frame(ctx, new THREE.Box3().setFromObject(ctx.scanGroup));
     if (props.mode === "plan" && ctx.planGroup.children.length) frame(ctx, new THREE.Box3().setFromObject(ctx.planGroup));
   }, [props.mode]);
@@ -335,6 +349,39 @@ export default function Scene3D(props: Scene3DProps) {
       ctx.markerGroup.add(g);
     }
   }, [props.mode, props.rooms, props.severityByRoom, props.issueCountByRoom, scanKey, loadedScanKey]);
+
+  // --- problem pins: where each photographed problem is in the scan -------
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    clearGroup(ctx.pinGroup);
+    if (props.mode !== "scan" || !props.issueRays?.length || !ctx.scanMeshes.length) return;
+    ctx.scene.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    const targets = [...ctx.scanMeshes, ...ctx.markerGroup.children];
+    const r = Math.max(0.05, ctx.scanSize * 0.008);
+    for (const issue of props.issueRays) {
+      ray.set(new THREE.Vector3(...issue.origin), new THREE.Vector3(...issue.dir));
+      ray.far = 12;
+      const hit = ray.intersectObjects(targets, true).find((h) => h.distance > 0.2);
+      const point = hit ? hit.point : new THREE.Vector3(...issue.origin).addScaledVector(new THREE.Vector3(...issue.dir), 2);
+      const pin = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 16, 12),
+        new THREE.MeshStandardMaterial({ color: SEVERITY_COLOR[issue.severity], emissive: SEVERITY_COLOR[issue.severity], emissiveIntensity: 0.35 }),
+      );
+      pin.position.copy(point);
+      pin.userData.roomId = issue.roomId;
+      pin.userData.issueId = issue.id;
+      const tip = document.createElement("div");
+      tip.className = "pin-label";
+      tip.style.borderColor = SEVERITY_COLOR[issue.severity];
+      tip.textContent = issue.title;
+      const label = new CSS2DObject(tip);
+      label.position.y = r * 2.2;
+      pin.add(label);
+      ctx.pinGroup.add(pin);
+    }
+  }, [props.mode, props.issueRays, scanKey, loadedScanKey, props.rooms]);
 
   useEffect(() => {
     const el = ctxRef.current?.renderer.domElement;

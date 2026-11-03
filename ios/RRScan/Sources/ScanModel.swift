@@ -14,6 +14,7 @@ struct ScannedRoom: Identifiable {
     var name: String
     var type: RoomType
     var captured: CapturedRoom
+    var photos: [RoomPhoto]
 }
 
 @MainActor
@@ -80,9 +81,9 @@ final class ScanModel: ObservableObject {
     }
 
     /// Keep a finished room. Scanning the same room again replaces the earlier scan.
-    func save(_ captured: CapturedRoom, for room: PlannedRoom) {
+    func save(_ captured: CapturedRoom, photos: [RoomPhoto], for room: PlannedRoom) {
         scanned.removeAll { $0.name.caseInsensitiveCompare(room.name) == .orderedSame }
-        scanned.append(ScannedRoom(name: room.name, type: room.type, captured: captured))
+        scanned.append(ScannedRoom(name: room.name, type: room.type, captured: captured, photos: photos))
         if !planned.contains(where: { $0.name.caseInsensitiveCompare(room.name) == .orderedSame }) {
             planned.append(room)
         }
@@ -103,7 +104,7 @@ final class ScanModel: ObservableObject {
             createdAt: ISO8601DateFormatter().string(from: Date()),
             unitName: unitName.isEmpty ? nil : unitName,
             device: UIDevice.current.model,
-            rooms: scanned.map { RRRoom(name: $0.name, type: $0.type.rawValue, captured: $0.captured) }
+            rooms: scanned.map { RRRoom(name: $0.name, type: $0.type.rawValue, captured: $0.captured, photos: $0.photos) }
         )
     }
 
@@ -127,7 +128,7 @@ final class ScanModel: ObservableObject {
             req.httpMethod = "PUT"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try encoded()
-            req.timeoutInterval = 120
+            req.timeoutInterval = 600 // scans carry photos; allow slow mobile uploads
             let (data, response) = try await URLSession.shared.data(for: req)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if (200..<300).contains(status) {

@@ -68,7 +68,8 @@ const passcodeOk = (given: unknown) =>
   !PASSCODE || (typeof given === "string" && timingSafeEqual(digest(given), digest(PASSCODE)));
 
 const app = express();
-app.use(express.json({ limit: "60mb" }));
+// LiDAR scans carry their photos (base64 JPEG), so allow large bodies.
+app.use(express.json({ limit: "200mb" }));
 
 app.get("/api/health", async (req, res) => {
   const status = await checkAi();

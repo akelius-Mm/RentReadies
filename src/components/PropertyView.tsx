@@ -78,7 +78,7 @@ export default function PropertyView({
         <ReportTab data={data} />
       ) : (
         <Suspense fallback={<div className="page muted">Loading 3D map…</div>}>
-          <MapTab data={data} />
+          <MapTab data={data} aiEnabled={aiEnabled} />
         </Suspense>
       )}
     </div>

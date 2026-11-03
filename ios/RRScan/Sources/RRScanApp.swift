@@ -94,7 +94,7 @@ struct ContentView: View {
                                 Task { await model.send() }
                             } label: {
                                 HStack {
-                                    Text(model.sendState == .sent ? "Sent ✓" : "Send to RentReadies")
+                                    Text(model.sendState == .sent ? "Sent ✓" : "Send to RentReadies (\(model.scanned.reduce(0) { $0 + $1.photos.count }) photos)")
                                     Spacer()
                                     if model.sendState == .sending { ProgressView() }
                                 }
@@ -133,7 +133,7 @@ struct ContentView: View {
     private func summary(_ room: ScannedRoom) -> String {
         let c = room.captured
         let objects = c.objects.map { String(describing: $0.category) }
-        var parts = ["\(c.walls.count) walls", "\(c.doors.count) doors", "\(c.windows.count) windows"]
+        var parts = ["\(room.photos.count) photos", "\(c.walls.count) walls", "\(c.doors.count) doors", "\(c.windows.count) windows"]
         let appliances = Set(objects).subtracting(["storage", "chair", "table", "sofa", "bed", "television", "stairs"])
         if !appliances.isEmpty { parts.append(appliances.sorted().joined(separator: ", ")) }
         return parts.joined(separator: " · ")

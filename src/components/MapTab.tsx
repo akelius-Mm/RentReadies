@@ -1,20 +1,35 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PropertyData } from "../lib/usePropertyData";
-import Scene3D from "./Scene3D";
+import Scene3D, { type IssueRay } from "./Scene3D";
 import { store } from "../lib/db";
 import { autoArrange } from "../lib/rooms";
 import { go } from "../lib/router";
 import { SEVERITY_COLOR } from "../lib/format";
 import { SEVERITIES, type ScanFormat } from "../lib/types";
 import { templateFor } from "../lib/roomTemplates";
-import { createScanSlot, fetchScan, scanAppLink } from "../lib/api";
-import { importRoomPlanScan, isRRScan } from "../lib/scanImport";
+import { analyzeRoom, createScanSlot, fetchScan, scanAppLink } from "../lib/api";
+import { importRoomPlanScan, isRRScan, photoRay } from "../lib/scanImport";
 import type { RRScan } from "../lib/types";
 
 const FORMATS: (ScanFormat | "json")[] = ["json", "glb", "gltf", "obj", "ply", "usdz"];
 
-export default function MapTab({ data }: { data: PropertyData }) {
-  const { property, rooms, severityByRoom, issueCountByRoom, reload } = data;
+export default function MapTab({ data, aiEnabled }: { data: PropertyData; aiEnabled: boolean }) {
+  const { property, rooms, photos, issues, severityByRoom, issueCountByRoom, reload } = data;
+  const [inspecting, setInspecting] = useState<string | null>(null);
+
+  // Each open problem marked on a scan photo becomes a pin where it is in the 3D scan.
+  const issueRays = useMemo<IssueRay[]>(() => {
+    const out: IssueRay[] = [];
+    for (const i of issues) {
+      if (i.status === "dismissed" || i.status === "done" || !i.photoId) continue;
+      const pose = photos.find((p) => p.id === i.photoId)?.pose;
+      if (!pose) continue;
+      const cx = i.bbox ? i.bbox.x + i.bbox.w / 2 : 0.5;
+      const cy = i.bbox ? i.bbox.y + i.bbox.h / 2 : 0.5;
+      out.push({ id: i.id, roomId: i.roomId, severity: i.severity, title: i.title, ...photoRay(pose, cx, cy) });
+    }
+    return out;
+  }, [issues, photos]);
   const [mode, setMode] = useState<"plan" | "scan">(property?.scan ? "scan" : "plan");
   const [placing, setPlacing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +41,38 @@ export default function MapTab({ data }: { data: PropertyData }) {
     const r = await importRoomPlanScan(property!, rooms, scan, fileName);
     await reload();
     setMode("scan");
-    setNotice(
+    const summary =
       `LiDAR scan imported: ${r.rooms} room${r.rooms === 1 ? "" : "s"} measured` +
-        (r.created ? ` (${r.created} new)` : "") +
-        (r.items ? `, ${r.items} appliance${r.items === 1 ? "" : "s"} and fixture${r.items === 1 ? "" : "s"} found.` : "."),
-    );
+      (r.created ? ` (${r.created} new)` : "") +
+      (r.items ? `, ${r.items} appliance${r.items === 1 ? "" : "s"} and fixture${r.items === 1 ? "" : "s"}` : "") +
+      (r.photos ? `, ${r.photos} photos` : "") +
+      ".";
+    setNotice(summary);
+    if (r.roomsWithPhotos.length && aiEnabled) await inspectRooms(r.roomsWithPhotos, summary);
+    else if (r.roomsWithPhotos.length) setNotice(`${summary} AI is unavailable right now; open each room and tap Inspect with AI later.`);
+  };
+
+  /** Run the AI inspection on each room from the scan, one after another. */
+  const inspectRooms = async (roomIds: string[], summary: string) => {
+    const [allRooms, allPhotos] = await Promise.all([store.rooms(property!.id), store.photos(property!.id)]);
+    const failed: string[] = [];
+    let found = 0;
+    for (const [n, id] of roomIds.entries()) {
+      const room = allRooms.find((r) => r.id === id);
+      const roomPhotos = allPhotos.filter((p) => p.roomId === id).sort((a, b) => a.createdAt - b.createdAt);
+      if (!room || !roomPhotos.length) continue;
+      setInspecting(`AI is inspecting ${room.name} (${n + 1} of ${roomIds.length})…`);
+      try {
+        const res = await analyzeRoom(room, roomPhotos);
+        found += res.count;
+      } catch (e) {
+        failed.push(`${room.name}: ${(e as Error).message}`);
+      }
+      await reload();
+    }
+    setInspecting(null);
+    setNotice(`${summary} AI found ${found} item${found === 1 ? "" : "s"} to fix.`);
+    if (failed.length) setError(`Not inspected: ${failed.join("; ")}`);
   };
 
   // Wait for RR Scan to upload. Poll every 3 s, and right away when the user switches back to this app.
@@ -174,6 +216,7 @@ export default function MapTab({ data }: { data: PropertyData }) {
               reload();
             }}
             onScanError={setError}
+            issueRays={issueRays}
           />
           {mode === "plan" && rooms.length === 0 && (
             <div className="map-empty">
@@ -230,7 +273,27 @@ export default function MapTab({ data }: { data: PropertyData }) {
 
         <aside className="map-side">
           {error && <p className="small error-text">{error}</p>}
-          {notice && <p className="small notice">{notice}</p>}
+          {notice && (
+            <div className="small notice">
+              {notice}
+              {!inspecting && issues.length > 0 && (
+                <>
+                  {" "}
+                  <a className="link" href={`#/p/${property.id}/repairs`}>
+                    View repairs →
+                  </a>
+                </>
+              )}
+            </div>
+          )}
+          {inspecting && (
+            <p className="small">
+              <span className="spinner" /> {inspecting}
+            </p>
+          )}
+          {mode === "scan" && issueRays.length > 0 && (
+            <p className="muted small">Pins show where each problem is. Tap a pin to open its room.</p>
+          )}
           <p className="muted small">
             {mode === "plan"
               ? "Drag rooms to match the layout. Tap a room to open its photos and repairs."

@@ -100,6 +100,20 @@ export interface Photo {
   height: number;
   createdAt: number;
   analyzedAt?: number;
+  /** "scan" = taken by RR Scan during the LiDAR walk-through. */
+  source?: "scan";
+  /** Where the camera was, for photos taken during a LiDAR scan (same coordinates as the scan). */
+  pose?: PhotoPose;
+}
+
+/** ARKit camera at the moment a scan photo was taken. */
+export interface PhotoPose {
+  /** Camera-to-world 4x4, column-major. Camera looks down -Z, x right, y up, in sensor (landscape) orientation. */
+  camera: number[];
+  /** 3x3 intrinsics, column-major, in sensor pixels: fx = [0], fy = [4], cx = [6], cy = [7]. */
+  intrinsics: number[];
+  /** Sensor image size [width, height] (landscape). The saved photo is this rotated 90° clockwise (portrait). */
+  sensor: [number, number];
 }
 
 export interface Room {
@@ -205,9 +219,22 @@ export interface RRScanObject extends RRScanSurface {
   category: string; // refrigerator, stove, oven, dishwasher, washerDryer, sink, toilet, bathtub, ...
 }
 
+export interface RRScanPhoto extends PhotoPose {
+  id: string;
+  /** "object" = best view of a detected appliance/fixture, "auto" = overview, "manual" = shutter button. */
+  kind: "object" | "auto" | "manual";
+  label: string;
+  category?: string;
+  /** Base64 JPEG, portrait. */
+  jpeg: string;
+  width: number;
+  height: number;
+}
+
 export interface RRScanRoom {
   name: string;
   type: RoomType;
+  photos?: RRScanPhoto[];
   walls: RRScanSurface[];
   doors: RRScanSurface[];
   windows: RRScanSurface[];

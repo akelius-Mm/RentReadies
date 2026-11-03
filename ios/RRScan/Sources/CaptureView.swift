@@ -8,6 +8,7 @@ struct CaptureView: View {
     let room: PlannedRoom
 
     @StateObject private var controller = CaptureController()
+    @StateObject private var sampler = PhotoSampler()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -17,6 +18,7 @@ struct CaptureView: View {
             VStack(spacing: 6) {
                 HStack {
                     Button("Cancel") {
+                        sampler.stop()
                         controller.stop()
                         model.capturing = nil
                     }
@@ -32,13 +34,18 @@ struct CaptureView: View {
 
                     switch controller.phase {
                     case .scanning:
-                        Button("Done") { controller.stop() }
-                            .buttonStyle(.borderedProminent)
+                        Button("Done") {
+                            sampler.stop()
+                            controller.stop()
+                        }
+                        .buttonStyle(.borderedProminent)
                     case .processing:
                         ProgressView()
                     case .finished:
                         Button("Save room") {
-                            if let result = controller.result { model.save(result, for: room) }
+                            if let result = controller.result {
+                                model.save(result, photos: sampler.select(for: result), for: room)
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                     case .failed:
@@ -48,7 +55,7 @@ struct CaptureView: View {
                 .padding(.horizontal)
 
                 if controller.phase == .scanning {
-                    Text("Walk the edges of the room slowly. Point at every wall, door, window and appliance.")
+                    Text("Walk the room slowly and pause briefly on each wall, appliance, sink, toilet and tub — photos are taken when you hold still. Use the shutter for close-ups (under sinks, inside the oven, model labels).")
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                         .padding(8)
@@ -65,8 +72,42 @@ struct CaptureView: View {
                 }
             }
             .padding(.top, 8)
+
+            if controller.phase == .scanning {
+                VStack {
+                    Spacer()
+                    HStack(alignment: .center) {
+                        Text("📷 \(sampler.candidateCount) frames")
+                            .font(.footnote.monospacedDigit())
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                        Spacer()
+                        Button {
+                            sampler.takeManual()
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        } label: {
+                            Circle()
+                                .strokeBorder(.white, lineWidth: 4)
+                                .background(Circle().fill(.white.opacity(0.35)))
+                                .frame(width: 72, height: 72)
+                        }
+                        .accessibilityLabel("Take close-up photo")
+                        Spacer()
+                        Text("\(sampler.manualCount) close-ups")
+                            .font(.footnote.monospacedDigit())
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 30)
+                }
+            }
         }
-        .onAppear { controller.start() }
+        .onAppear {
+            controller.start()
+            sampler.start(session: model.arSession)
+        }
+        .onDisappear { sampler.stop() }
         .statusBarHidden()
     }
 }

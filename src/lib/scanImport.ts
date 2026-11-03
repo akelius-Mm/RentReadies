@@ -1,7 +1,7 @@
 import { store, uid } from "./db";
 import { addRoom } from "./rooms";
 import { templateFor } from "./roomTemplates";
-import type { InventoryItem, InventoryKind, Property, Room, RoomType, RRScan, RRScanRoom, RRScanSurface } from "./types";
+import type { PhotoPose, InventoryItem, InventoryKind, Photo, Property, Room, RoomType, RRScan, RRScanPhoto, RRScanRoom, RRScanSurface } from "./types";
 
 const FT_PER_M = 3.28084;
 const IN_PER_M = 39.3701;
@@ -68,6 +68,36 @@ export function matchesScanCategory(category: string | undefined, itemName: stri
 
 const inches = (m: number) => Math.round(m * IN_PER_M);
 
+/** Which checklist shot a scan photo of this object fills, by room type. */
+function shotFor(roomType: RoomType, p: RRScanPhoto, autoIndex: number): { shotId: string; label: string } {
+  if (p.kind === "manual") return { shotId: "extra", label: p.label || "Close-up" };
+  if (p.kind === "auto") {
+    if (autoIndex === 0) return { shotId: "overview-door", label: "Overview from doorway" };
+    if (autoIndex === 1) return { shotId: "overview-back", label: "Overview from far corner" };
+    return { shotId: "extra", label: `Walk-through view ${autoIndex + 1}` };
+  }
+  const byCategory: Record<string, string> = {
+    refrigerator: "fridge-outside",
+    stove: "range-top",
+    oven: "range-top",
+    dishwasher: "dishwasher",
+    toilet: "toilet",
+    bathtub: "tub-shower",
+    washerDryer: "washer",
+    sink: roomType === "bathroom" ? "vanity" : "sink-faucet",
+  };
+  const shotId = (p.category && byCategory[p.category]) || "extra";
+  const shot = templateFor(roomType).shots.find((s) => s.id === shotId);
+  return { shotId: shot ? shotId : "extra", label: shot?.label ?? p.label };
+}
+
+function base64ToBlob(b64: string, type = "image/jpeg") {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
 export function isRRScan(x: unknown): x is RRScan {
   return typeof x === "object" && x !== null && (x as RRScan).format === "rentreadies-roomplan" && Array.isArray((x as RRScan).rooms);
 }
@@ -88,6 +118,8 @@ export async function importRoomPlanScan(property: Property, existingRooms: Room
   let rooms: Room[] = existingRooms.map((r) => ({ ...r, scanMarker: null, scanIndex: null }));
   for (const r of rooms) await store.putRoom(r);
   for (const i of await store.inventory(property.id)) if (i.source === "scan") await store.deleteInventoryItem(i.id);
+  // Photos from an earlier scan are replaced too (their repair items stay, without the photo link).
+  for (const p of await store.photos(property.id)) if (p.source === "scan") await store.deletePhoto(p.id);
 
   const bounds = scan.rooms.map(roomBounds);
   const valid = bounds.filter((b): b is RoomBounds => !!b);
@@ -97,6 +129,8 @@ export async function importRoomPlanScan(property: Property, existingRooms: Room
   let created = 0;
   let matched = 0;
   let items = 0;
+  let photos = 0;
+  const roomsWithPhotos: string[] = [];
   for (const [index, sr] of scan.rooms.entries()) {
     const type: RoomType = ROOM_TYPES.includes(sr.type) ? sr.type : "other";
     const name = sr.name?.trim() || templateFor(type).label;
@@ -124,6 +158,28 @@ export async function importRoomPlanScan(property: Property, existingRooms: Room
     }
     await store.putRoom(updated);
     rooms = rooms.map((r) => (r.id === updated.id ? updated : r));
+
+    let autoIndex = 0;
+    for (const sp of sr.photos ?? []) {
+      const { shotId, label } = shotFor(type, sp, sp.kind === "auto" ? autoIndex : 0);
+      if (sp.kind === "auto") autoIndex++;
+      const photo: Photo = {
+        id: uid(),
+        propertyId: property.id,
+        roomId: updated.id,
+        shotId,
+        label,
+        blob: base64ToBlob(sp.jpeg),
+        width: sp.width,
+        height: sp.height,
+        createdAt: Date.now() + photos, // keeps scan order
+        source: "scan",
+        pose: { camera: sp.camera, intrinsics: sp.intrinsics, sensor: sp.sensor },
+      };
+      await store.putPhoto(photo);
+      photos++;
+    }
+    if (sr.photos?.length) roomsWithPhotos.push(updated.id);
 
     for (const o of sr.objects) {
       const entry = OBJECT_ITEMS[o.category];
@@ -160,5 +216,28 @@ export async function importRoomPlanScan(property: Property, existingRooms: Room
     }
   }
 
-  return { rooms: scan.rooms.length, created, matched, items };
+  return { rooms: scan.rooms.length, created, matched, items, photos, roomsWithPhotos };
+}
+
+/**
+ * World-space ray through a point on a scan photo (x, y as 0..1 of the portrait photo).
+ * The photo is the landscape sensor image rotated 90° clockwise, so portrait (x, y) maps to
+ * sensor u = y * W, v = (1 - x) * H. ARKit camera space: x right, y up, looking down -Z.
+ */
+export function photoRay(pose: PhotoPose, x: number, y: number) {
+  const [W, H] = pose.sensor;
+  const k = pose.intrinsics;
+  const fx = k[0], fy = k[4], cx = k[6], cy = k[7];
+  const u = y * W;
+  const v = (1 - x) * H;
+  const dirCam: [number, number, number] = [(u - cx) / fx, -(v - cy) / fy, -1];
+  const m = pose.camera;
+  const origin: [number, number, number] = [m[12], m[13], m[14]];
+  const d: [number, number, number] = [
+    m[0] * dirCam[0] + m[4] * dirCam[1] + m[8] * dirCam[2],
+    m[1] * dirCam[0] + m[5] * dirCam[1] + m[9] * dirCam[2],
+    m[2] * dirCam[0] + m[6] * dirCam[1] + m[10] * dirCam[2],
+  ];
+  const len = Math.hypot(...d) || 1;
+  return { origin, dir: [d[0] / len, d[1] / len, d[2] / len] as [number, number, number] };
 }
