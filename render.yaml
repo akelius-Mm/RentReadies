@@ -1,0 +1,18 @@
+# One-click hosting on Render (https://render.com): New → Blueprint → pick this repo.
+# The free plan sleeps after ~15 min idle; the first request after that takes ~1 minute to wake up.
+# Your inspections are stored on your phone, so nothing is lost while it sleeps.
+services:
+  - type: web
+    name: rentreadies
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ANTHROPIC_API_KEY # from console.anthropic.com → API keys
+        sync: false
+      - key: APP_PASSCODE # anyone using the app enters this once
+        sync: false

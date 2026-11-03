@@ -38,6 +38,16 @@ a printable report.
 Photos and inspections are stored in the browser (IndexedDB) on the device that took them. Photos are resized
 to 1568 px before storage and upload.
 
+## Put it online (no computer needed)
+
+1. Create a free account at [render.com](https://render.com) and connect your GitHub.
+2. **New → Blueprint**, pick this repository. Render reads `render.yaml`.
+3. Fill in `ANTHROPIC_API_KEY` (from [console.anthropic.com](https://console.anthropic.com) → API keys) and an
+   `APP_PASSCODE`, then **Apply**. After a few minutes you get an address like `https://rentreadies.onrender.com`.
+4. On the iPhone, open that address in **Safari** → Share → **Add to Home Screen**. Enter the passcode once.
+
+The free plan sleeps when idle; the first open after a while takes about a minute.
+
 ## Use it on your phone with your Claude login
 
 The app runs on your phone; a small server on your computer does the AI inspection using your Claude login.
